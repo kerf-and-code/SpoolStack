@@ -62,7 +62,11 @@ export default async function MaterialsPage({
             <p className="opacity-70">No archived materials.</p>
           ) : (
             <>
-              <p className="opacity-70">No materials yet.</p>
+              <p className="font-medium">No materials yet</p>
+              <p className="mx-auto mt-1 max-w-sm opacity-70">
+                Start from a filament type such as PLA or PETG, then add the brand and colour. A category that
+                matches your slicer lets gcode import pick the material for you.
+              </p>
               <Link href="/app/materials/new" className="mt-3 inline-block font-medium underline underline-offset-2">
                 Add your first filament
               </Link>

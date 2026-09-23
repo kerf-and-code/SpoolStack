@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Notice, PageHeader } from '@/components/page-header';
 import { requireUser } from '@/lib/auth';
 import { formatMoney, formatNumber } from '@/lib/format';
+import { MACHINE_PRESETS } from '@/lib/presets';
 import { getCurrency } from '@/lib/settings';
 import { machineCostingGaps } from './fields';
 
@@ -63,7 +64,11 @@ export default async function MachinesPage({
             <p className="opacity-70">No archived machines.</p>
           ) : (
             <>
-              <p className="opacity-70">No machines yet.</p>
+              <p className="font-medium">No machines yet</p>
+              <p className="mx-auto mt-1 max-w-sm opacity-70">
+                Pick from {MACHINE_PRESETS.length} common printers or enter your own. Only the name is required;
+                cost fields can wait until you want costing.
+              </p>
               <Link href="/app/machines/new" className="mt-3 inline-block font-medium underline underline-offset-2">
                 Add your first printer
               </Link>

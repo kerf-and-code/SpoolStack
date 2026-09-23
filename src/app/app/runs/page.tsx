@@ -109,7 +109,11 @@ export default async function RunsPage({ searchParams }: { searchParams: Promise
 
       {runs && runs.length === 0 && !active ? (
         <div className="rounded-lg border border-dashed border-black/20 p-8 text-center text-sm dark:border-white/25">
-          <p className="opacity-70">No runs logged yet.</p>
+          <p className="font-medium">No runs logged yet</p>
+          <p className="mx-auto mt-1 max-w-sm opacity-70">
+            Log every print, including the failures. Drop the sliced .gcode or .gcode.3mf on the form and the time,
+            filament and settings fill themselves.
+          </p>
           <Link href="/app/runs/new" className="mt-3 inline-block font-medium underline underline-offset-2">
             Log your first run
           </Link>

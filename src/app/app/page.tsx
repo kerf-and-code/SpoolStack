@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requireUser } from '@/lib/auth';
 import { formatDuration } from '@/lib/duration';
+import { MACHINE_PRESETS, MATERIAL_PRESETS } from '@/lib/presets';
 
 export const metadata: Metadata = {
   title: 'Dashboard : SpoolStack',
@@ -38,27 +39,41 @@ export default async function DashboardPage() {
     { label: 'Active projects', value: projects.count ?? 0, href: '/app/projects' },
   ];
 
+  // The first-run walk, in the order that makes each step easier: a machine
+  // and a material first, so the first run's pickers are filled and a gcode
+  // import can match them. The electricity rate is last because nothing
+  // needs it until costing.
+  const runCount = runs.count ?? 0;
   const setup = [
-    {
-      done: settings.data?.electricity_rate_per_kwh != null,
-      label: 'Set your electricity rate',
-      detail: 'Without it, energy cost is reported as missing rather than guessed.',
-      href: '/app/settings',
-    },
     {
       done: (machines.count ?? 0) > 0,
       label: 'Add your printer',
-      detail: 'Purchase cost, expected life and wattage drive machine-wear and energy cost.',
+      detail: `Pick from ${MACHINE_PRESETS.length} common printers or enter your own. Cost fields can wait.`,
       href: '/app/machines/new',
     },
     {
       done: (materials.count ?? 0) > 0,
       label: 'Add a filament',
-      detail: 'Package cost and weight give the cost per gram every run is priced with.',
+      detail: `Pick from ${MATERIAL_PRESETS.length} filament types, then add the brand and colour.`,
       href: '/app/materials/new',
+    },
+    {
+      done: runCount > 0,
+      label: 'Log your first run',
+      detail: 'Drop the sliced file on the form and most of it fills itself.',
+      href: '/app/runs/new',
+    },
+    {
+      done: settings.data?.electricity_rate_per_kwh != null,
+      label: 'Set your electricity rate',
+      detail: 'Optional. Without it, energy cost shows as missing rather than guessed.',
+      href: '/app/settings',
     },
   ];
   const setupRemaining = setup.filter((s) => !s.done).length;
+  const nextStep = setup.find((s) => !s.done);
+  // Before the first run, setup is the whole page's job, so it goes first.
+  const setupFirst = runCount === 0;
 
   // Counts, not percentages: "4 of 5" says how little data there is; "80%" hides it.
   const rows = history.data ?? [];
@@ -72,6 +87,52 @@ export default async function DashboardPage() {
     materialUse.set(r.material_id, cur);
   }
   const topMaterial = [...materialUse.values()].sort((a, b) => b.n - a.n)[0];
+
+  const setupSection =
+    setupRemaining > 0 ? (
+      <section className="rounded-lg border border-black/10 p-5 dark:border-white/15">
+        <h2 className="font-semibold">Getting set up</h2>
+        <p className="mt-1 text-sm opacity-65">
+          {setupRemaining} of {setup.length} left. Nothing here is required, and nothing you skip is guessed:
+          a missing cost input shows up later as a cost marked incomplete.
+        </p>
+        <ul className="mt-4 space-y-3">
+          {setup.map((step) => (
+            <li key={step.label} className="flex items-start gap-3 text-sm">
+              <span
+                aria-hidden
+                className={
+                  'mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs ' +
+                  (step.done
+                    ? 'border-emerald-500 bg-emerald-500 text-white'
+                    : 'border-black/25 dark:border-white/30')
+                }
+              >
+                {step.done ? '✓' : ''}
+              </span>
+              <span>
+                {step.done ? (
+                  <span className="line-through opacity-60">{step.label}</span>
+                ) : (
+                  <Link
+                    href={step.href}
+                    className={
+                      'underline underline-offset-2 ' + (step === nextStep ? 'font-semibold' : 'font-medium')
+                    }
+                  >
+                    {step.label}
+                  </Link>
+                )}
+                {step === nextStep ? (
+                  <span className="ml-2 rounded-full bg-foreground px-2 py-0.5 text-xs text-background">next</span>
+                ) : null}
+                {!step.done ? <span className="block opacity-60">{step.detail}</span> : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ) : null;
 
   return (
     <div className="space-y-10">
@@ -89,6 +150,8 @@ export default async function DashboardPage() {
           Log a run
         </Link>
       </div>
+
+      {setupFirst ? setupSection : null}
 
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
         {tiles.map((tile) => {
@@ -150,46 +213,17 @@ export default async function DashboardPage() {
         </section>
       ) : null}
 
-      {setupRemaining > 0 ? (
-        <section className="rounded-lg border border-black/10 p-5 dark:border-white/15">
-          <h2 className="font-semibold">Getting set up</h2>
-          <p className="mt-1 text-sm opacity-65">
-            {setupRemaining} of {setup.length} left. Every step is optional, but each one you skip shows up
-            later as a cost marked incomplete.
-          </p>
-          <ul className="mt-4 space-y-3">
-            {setup.map((step) => (
-              <li key={step.label} className="flex items-start gap-3 text-sm">
-                <span
-                  aria-hidden
-                  className={
-                    'mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs ' +
-                    (step.done
-                      ? 'border-emerald-500 bg-emerald-500 text-white'
-                      : 'border-black/25 dark:border-white/30')
-                  }
-                >
-                  {step.done ? '✓' : ''}
-                </span>
-                <span>
-                  {step.done ? (
-                    <span className="line-through opacity-60">{step.label}</span>
-                  ) : (
-                    <Link href={step.href} className="font-medium underline underline-offset-2">
-                      {step.label}
-                    </Link>
-                  )}
-                  {!step.done ? <span className="block opacity-60">{step.detail}</span> : null}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      {!setupFirst ? setupSection : null}
 
-      <p className="text-xs opacity-50">
-        Connection check: {parameterDefs.count ?? 0} FDM parameter definitions readable (expect 25).
-      </p>
+      {/* M0 connection check, now shown only when it fails: zero readable
+          parameter definitions means the schema or RLS is broken, and the run
+          form cannot render its settings. */}
+      {!parameterDefs.error && (parameterDefs.count ?? 0) === 0 ? (
+        <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 text-sm">
+          No parameter definitions are readable, so the run form has no settings to show. Check that
+          db/schema.sql has been run on this Supabase project.
+        </div>
+      ) : null}
 
       {errors.length > 0 ? (
         <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 text-sm">

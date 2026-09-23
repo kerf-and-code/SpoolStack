@@ -3,7 +3,7 @@
 **From spec to shipped Phase 1.**
 Kerf and Code LLC. Written 2026-09-20. Supersedes the Phase 0 feasibility doc of 2026-08-01.
 
-> **Status, 2026-09-23 (night):** M0 to M3 complete on the live app. M4 (journal) and M5 (ship) are built and verified locally, waiting to be committed and exit-tested. Domain `spool-stack.com` is bought; connecting it is a manual checklist (M5 item 8) with no code change left. Current state and the log of what changed are in section 8.
+> **Status, 2026-09-23:** M0 to M4 complete on the live app, and M5's code is live. What is left of Phase 1 is manual (domain, search console, phone install check) and the two-week dogfood. Current state and the log of what changed are in section 8.
 
 ---
 
@@ -322,8 +322,8 @@ Two of the five are now answered.
 | M1 Setup entities | **Done** | Machines, materials, projects and settings CRUD live. Exit test passed on real data: inline validation keeps typed values, material costed at $0.015/g through live RLS, duplicate names rejected in plain English, confirm before delete. |
 | M2 Run form | **Done** | A real run logged successfully on the live app. Stopwatch times (60 s fresh, 20 s repeat targets) not yet recorded. |
 | M3 Gcode import | **Done** | A real Bambu Studio 2.8 `.gcode.3mf` from an A1 imported on the live app: 267 min, 135.88 g, 21 settings. |
-| M4 Journal | Built, not yet committed | Run list with filters and paging, run detail, edit and delete, dashboard. 49 tests pass. Exit test (20 runs, filters, edit round-trip) runs after the push. |
-| M5 Ship | Built, not yet committed | See the M5 breakdown below. 60 tests pass across four suites; type-check, lint and production build clean. |
+| M4 Journal | **Done** | Run list with filters and paging, run detail, edit and delete, dashboard. Exit test passed on the live app. |
+| M5 Ship | Code done and live; manual steps left | See the M5 breakdown below. 60 tests pass across four suites; type-check, lint and production build clean. |
 
 **M5 item by item:**
 
@@ -331,7 +331,7 @@ Two of the five are now answered.
 |---|---|
 | 1. Mobile first | Partly. New pages are phone-first; a dedicated one-handed pass on the run form waits for real use at the printer, so it is driven by what is actually awkward. |
 | 2. PWA | **Done.** Manifest, icons (any and maskable), apple icon, favicon, theme colours, install shortcuts for Log a run and Runs. Service worker is deliberately minimal: shows `/offline.html` when a page load fails offline and caches nothing else, so no signed-in page can ever be served stale. Verified in Chromium: registers, controls the page, serves the offline page, and gets out of the way when back online. |
-| 3. Empty states that teach | Not started. Touches the M4 dashboard, so it follows the M4 commit. |
+| 3. Empty states that teach | **Done.** Before the first run, the dashboard opens with the walk: printer, then filament, then first run, then the electricity rate, with the next step marked. Empty machine, material and run lists say what to do and point at the presets and gcode import. The M0 connection-check line now appears only when it fails. |
 | 4. Sentry | **Deferred.** Needs an account and a DSN. In its place: an error boundary inside `/app` (keeps the nav, shows a reference digest that matches the Vercel function log), a global error page, and not-found pages for the site and for `/app`. |
 | 5. Marketing page | **Done.** Rewritten so every claim is true of the shipped app; costing and later phases are listed under "Coming next", not sold as built. Plus `/privacy`. |
 | 6. SEO | **Done in code:** `metadataBase`, Open Graph and Twitter cards with a 1200x630 image, canonical links, `robots.txt` (disallows `/app` and `/auth`), `sitemap.xml`, JSON-LD `SoftwareApplication` with a free offer and no ratings. **Manual, after the domain:** Google Search Console and Bing verification. |
@@ -364,7 +364,7 @@ Also in M5: security headers from the Next 16 PWA guide (nosniff, frame DENY, st
 
 ### Next actions
 
-1. **Commit M4, then M5,** each after its own build. Then the M4 exit test on the live app, and fix the two known bad runs (the 3853-minute mistype and the Copy test duplicate) through the new edit and delete.
+1. ~~Commit M4 and M5, M4 exit test.~~ Done 2026-09-23.
 2. **Install check on a phone:** open the live site, Add to Home Screen, confirm it opens to `/app` with the new icon.
 3. **Connect `spool-stack.com`** (M5 item 8), then Search Console and Bing verification.
-4. **Empty states** (M5 item 3), then the two-week dogfood that closes Phase 1. Stopwatch targets from M2 still to record: under 60 seconds fresh, under 20 seconds repeat.
+4. **The two-week dogfood** that closes Phase 1. Empty states (M5 item 3) are done. Stopwatch targets from M2 still to record: under 60 seconds fresh, under 20 seconds repeat.
