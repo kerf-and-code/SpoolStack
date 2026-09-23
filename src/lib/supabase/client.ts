@@ -2,8 +2,9 @@
 // Server Components, Server Actions and Route Handlers use ./server instead.
 
 import { createBrowserClient } from '@supabase/ssr';
+import type { Database } from '@/lib/database.types';
 import { supabaseAnonKey, supabaseUrl } from './env';
 
 export function createClient() {
-  return createBrowserClient(supabaseUrl(), supabaseAnonKey());
+  return createBrowserClient<Database>(supabaseUrl(), supabaseAnonKey());
 }

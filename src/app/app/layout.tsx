@@ -1,34 +1,25 @@
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { NavLinks } from '@/components/nav-links';
+import { requireUser } from '@/lib/auth';
 
-// The middleware already blocks unauthenticated requests to /app. This check
-// is the second lock: middleware config is one regex edit away from a hole,
-// and a layout that assumes a user without proving one is how data leaks.
+// The proxy already blocks unauthenticated requests to /app. requireUser() is
+// the second lock: proxy config is one regex edit away from a hole, and a
+// layout that assumes a user without proving one is how data leaks.
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect('/sign-in?next=/app');
-  }
+  const { email } = await requireUser();
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
       <header className="border-b border-black/10 dark:border-white/15">
-        <div className="mx-auto flex max-w-5xl items-center gap-6 px-6 py-3">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-6 py-3">
           <Link href="/app" className="font-semibold tracking-tight">
             SpoolStack
           </Link>
-          <nav className="flex items-center gap-4 text-sm opacity-80">
-            <Link href="/app" className="hover:opacity-100">
-              Dashboard
-            </Link>
-          </nav>
+          <div className="order-last w-full sm:order-none sm:w-auto">
+            <NavLinks />
+          </div>
           <div className="ml-auto flex items-center gap-3 text-sm">
-            <span className="hidden opacity-60 sm:inline">{user.email}</span>
+            <span className="hidden opacity-60 md:inline">{email}</span>
             <form action="/auth/sign-out" method="post">
               <button
                 type="submit"

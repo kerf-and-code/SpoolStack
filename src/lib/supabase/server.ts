@@ -8,15 +8,20 @@
 // Because this client carries the signed-in user's cookies, every query it
 // runs is subject to Row Level Security. That is the point: the policies in
 // db/schema.sql are the access control, not application-level filtering.
+//
+// Typed with the generated Database type, so a renamed or dropped column is a
+// compile error here rather than a runtime surprise. Regenerate
+// src/lib/database.types.ts after every schema change.
 
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import type { Database } from '@/lib/database.types';
 import { supabaseAnonKey, supabaseUrl } from './env';
 
 export async function createClient() {
   const cookieStore = await cookies();
 
-  return createServerClient(supabaseUrl(), supabaseAnonKey(), {
+  return createServerClient<Database>(supabaseUrl(), supabaseAnonKey(), {
     cookies: {
       getAll() {
         return cookieStore.getAll();
@@ -28,11 +33,13 @@ export async function createClient() {
           }
         } catch {
           // Server Components cannot set cookies. This throw is expected and
-          // safe to swallow: the middleware in src/middleware.ts refreshes the
-          // session on every request, so the refreshed cookies still reach the
-          // browser. Only remove this catch if the middleware is removed.
+          // safe to swallow: src/proxy.ts refreshes the session on every
+          // request, so the refreshed cookies still reach the browser. Only
+          // remove this catch if the proxy is removed.
         }
       },
     },
   });
 }
+
+export type ServerClient = Awaited<ReturnType<typeof createClient>>;
