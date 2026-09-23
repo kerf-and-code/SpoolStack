@@ -8,14 +8,16 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test:gcode": "node --experimental-strip-types src/lib/gcodeParse.test.ts"
+    "test:gcode": "node --experimental-strip-types src/lib/gcodeParse.test.ts",
+    "test:run-form": "node --experimental-strip-types src/lib/run-form.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.0",
     "next": "16.3.6",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

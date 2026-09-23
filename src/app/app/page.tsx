@@ -29,7 +29,7 @@ export default async function DashboardPage() {
     .filter((m): m is string => Boolean(m));
 
   const tiles = [
-    { label: 'Runs logged', value: runs.count ?? 0, href: null },
+    { label: 'Runs logged', value: runs.count ?? 0, href: '/app/runs' },
     { label: 'Machines', value: machines.count ?? 0, href: '/app/machines' },
     { label: 'Materials', value: materials.count ?? 0, href: '/app/materials' },
     { label: 'Active projects', value: projects.count ?? 0, href: '/app/projects' },
@@ -59,12 +59,19 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-10">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="mt-1 text-sm opacity-70">
-          Run logging arrives in the next milestone. Set up your machines and materials first so every
-          run is costed from day one.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="mt-1 text-sm opacity-70">
+            Log every print, good or bad. The failures are what make the costs honest.
+          </p>
+        </div>
+        <Link
+          href="/app/runs/new"
+          className="rounded-lg bg-foreground px-5 py-2.5 text-sm font-semibold text-background"
+        >
+          Log a run
+        </Link>
       </div>
 
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">

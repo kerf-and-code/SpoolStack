@@ -19,7 +19,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <NavLinks />
           </div>
           <div className="ml-auto flex items-center gap-3 text-sm">
-            <span className="hidden opacity-60 md:inline">{email}</span>
+            {/* One tap from anywhere: logging speed is the product. */}
+            <Link
+              href="/app/runs/new"
+              className="rounded-md bg-foreground px-3 py-1.5 font-medium text-background"
+            >
+              Log run
+            </Link>
+            <span className="hidden opacity-60 lg:inline">{email}</span>
             <form action="/auth/sign-out" method="post">
               <button
                 type="submit"
