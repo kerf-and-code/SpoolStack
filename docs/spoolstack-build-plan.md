@@ -3,7 +3,7 @@
 **From spec to shipped Phase 1.**
 Kerf and Code LLC. Written 2026-09-20. Supersedes the Phase 0 feasibility doc of 2026-08-01.
 
-> **Status, 2026-09-23:** M0 and M1 complete and passing their exit tests on the live app. Next is M2, the run form. Current state and the log of what changed are in section 8.
+> **Status, 2026-09-23:** M0, M1 and M2 complete on the live app. M3 (gcode import) is built and waiting on its real-file test. Domain `spool-stack.com` is bought and connects in M5. Current state and the log of what changed are in section 8.
 
 ---
 
@@ -166,6 +166,15 @@ Six milestones. Each one ends in something you can check, not something you feel
    - **Never preload prices.** Machine and filament prices go stale and vary by seller. A preloaded price that's wrong for you produces a confidently wrong cost, which is exactly what "blank means unknown" exists to prevent.
    - Keep it small and curated: about 20 printers and about 15 filament types, from manufacturer spec sheets, not scraped. New printers ship every few months, so the catalog has a maintenance cost; the M3 file-based offer covers the long tail for free.
 
+8. **Connect `spool-stack.com`** (bought 2026-09-23). Done late on purpose: until real users exist, the vercel.app address costs nothing, and a domain switch resets everyone's sign-in once. In this order:
+   1. **Vercel**, Settings, Domains: add `spool-stack.com` and `www.spool-stack.com`, and redirect `www` to the bare domain so there is one canonical address.
+   2. **DNS** at the registrar: add exactly the records Vercel shows on that page. Wait for Vercel to show both as valid.
+   3. **Supabase**, Authentication, URL Configuration: Site URL becomes `https://spool-stack.com`, and add `https://spool-stack.com/**` to Redirect URLs. Keep the vercel.app and localhost entries so nothing breaks mid-switch.
+   4. **Google OAuth** (if set up by then): no change. Google redirects to the Supabase callback, not to the app.
+   5. **Test:** sign in on `https://spool-stack.com` with a magic link, and confirm the email link points at spool-stack.com, not vercel.app.
+   6. **Code:** the canonical URL, sitemap and JSON-LD from item 6 use `https://spool-stack.com`.
+   Auth cookies are per domain, so everyone signs in once more after the switch. No data is affected.
+
 **Exit criteria, and the real definition of Phase 1 done:** you log your own prints for two consecutive weeks without opening a spreadsheet once. If you reach for the spreadsheet, the thing that pulled you back is the next bug to fix.
 
 **Estimate.** 2 sessions.
@@ -290,25 +299,45 @@ Other fixes and additions over the draft:
 Two of the five are now answered.
 
 1. ~~**Repo path and name.**~~ Settled 2026-09-22: `C:\Users\Test\SpoolStack`, `github.com/kerf-and-code/SpoolStack`.
-2. ~~**Product name.**~~ Settled by the repo name: SpoolStack. Noting the reservation for the record, since it is cheap to change now and expensive at Phase 5: the name is spool-specific, and the spec's whole thesis is that this is not a filament tracker. When CNC and laser arrive the name argues against the product. Revisit before buying a domain, not after.
-3. **Domain.** `spoolstack.app`? A subdirectory of `kerfandcode.com`? Litmus taught you that the marketing domain and the app domain are worth separating, but this time you can do it with one Next app and a route group instead of two sites.
+2. ~~**Product name.**~~ Settled: SpoolStack. The domain `spool-stack.com` was bought on 2026-09-23, so the earlier reservation (a spool-specific name for a multi-process product) is withdrawn.
+3. ~~**Domain.**~~ Settled: `spool-stack.com`. One domain for both the marketing page (`/`) and the app (`/app`), no split like Litmus needed. Connects in M5, item 8.
 4. **Auth providers.** Google OAuth alone, or Google plus email magic link? Magic link costs nothing and covers people without a Google account.
 5. **Offline logging.** Printers live in garages and basements with bad wifi. A "save when back online" queue is genuinely useful here and genuinely annoying to retrofit. My recommendation is to keep it out of Phase 1 but make every write go through a single `saveRun()` function so the queue has one place to live later.
 
 ---
 
-## 8. Immediate next actions
+## 8. Status and change log
 
-1. Scaffold the Next app into the repo. **`create-next-app` refuses a directory that already has files in it**, and the repo now has `db/`, `src/` and `README.md`. Scaffold to a sibling folder and merge, rather than moving the existing files out and back.
-2. Create the Supabase project (West US / Oregon), run `db/schema.sql`, run the verification block at the end of the file.
-3. Wire Supabase auth with `@supabase/ssr`, deploy to Vercel.
-4. Tell me when M0 is deployed and I will build M1.
+### Where things stand (2026-09-23)
 
-Files already on disk:
+| Milestone | State | Evidence |
+|---|---|---|
+| M0 Foundations | **Done** | Live at `spool-stack-six.vercel.app`. Sign-in works. Live DB verified: RLS on all 9 tables, 27 policies, `run_cost_breakdown` has `security_invoker=true`, 25 parameter defs, 20 defect types. |
+| M1 Setup entities | **Done** | Machines, materials, projects and settings CRUD live. Exit test passed on real data: inline validation keeps typed values, material costed at $0.015/g through live RLS, duplicate names rejected in plain English, confirm before delete. |
+| M2 Run form | **Done** | A real run logged successfully on the live app. Stopwatch times (60 s fresh, 20 s repeat targets) not yet recorded. |
+| M3 Gcode import | Built, awaiting real-file test | `.gcode` and `.gcode.3mf` import on the run form; 47 tests across parser, form and import. Bambu header patterns unverified until a real file is imported. |
+| M4 Journal | Not started | |
+| M5 Ship | Not started | Includes setup presets (item 7) and connecting spool-stack.com (item 8). |
 
-| File | Path |
-|---|---|
-| `schema.sql` | `C:\Users\Test\SpoolStack\db\schema.sql` |
-| `gcodeParse.ts` | `C:\Users\Test\SpoolStack\src\lib\gcodeParse.ts` |
-| `gcodeParse.test.ts` | `C:\Users\Test\SpoolStack\src\lib\gcodeParse.test.ts` |
-| `spoolstack-build-plan.md` | `C:\Users\Test\SpoolStack\docs\spoolstack-build-plan.md` |
+**Live infrastructure:** Supabase project `fpvmqelajzraqsylmjce` (West US). Vercel project `spool-stack`, production domain `spool-stack-six.vercel.app` until `spool-stack.com` is connected (bought 2026-09-23, M5 item 8). Repo `github.com/kerf-and-code/SpoolStack`, local `C:\Users\Test\SpoolStack`.
+
+### Changes from the original plan, and why
+
+- **Stack is Next 16, not 15.** `create-next-app` installed 16.3.6. Next 16 renamed `middleware.ts` to `proxy.ts`, and it refuses to build with both files present. That's why the auth refresh lives in `src/proxy.ts`.
+- **The live database had an unrecognised schema** with the same table names, a 9-row parameter seed, and a cost view **without** `security_invoker`. It was never created from this repo. It was replaced via `db/reset_foreign_schema.sql`, a one-off with a row-count guard that refuses to drop anything if user tables hold data. `db/schema.sql` now has a **preflight** that stops the run if tables exist with a different shape.
+- **Adopted from that old schema:** `projects.sale_price` and `projects.target_quantity`, both useful for Phase 2 margin and batch curves.
+- **Marketing at `/`, app at `/app`** from M0 rather than M5, so no route retrofit later.
+- **Archive by default, delete only when unused**, for machines, materials and projects. The run foreign keys are `ON DELETE SET NULL`, so deleting a used machine would silently strip its cost from every run.
+
+### Operational lessons, so they are not relearned
+
+- **Windows cmd:** one `-m` per commit-message paragraph. A quoted string spanning lines does not run.
+- **Supabase SQL editor:** saved tabs keep old text. Twice, a stale `schema.sql` ran from an old tab. Before running a repo file, Ctrl+F for a marker only the current version has.
+- **Always regenerate types after a schema change,** and check the file actually changed (size and a new column name), not just that the command exited.
+- **`robocopy` into a git repo must exclude `.git`** (`/XD .git`). Without it the repo's config and HEAD get overwritten.
+- **npm package names cannot start with `_`,** which also applies to `create-next-app` folder names.
+
+### Next actions
+
+1. **M2, the run form.** Stopwatch targets: under 60 seconds for a fresh manual run, under 20 seconds for a repeat via "Copy from last run".
+2. Then M3 (gcode import UI, including the offer to create a machine from the file), M4 (journal), M5 (ship, including presets).
