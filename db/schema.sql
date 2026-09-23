@@ -15,6 +15,7 @@
 --     No ALTER TABLE, no migration.
 --
 -- Section map:
+--   P. Preflight: refuse to run over a different schema
 --   0. Extensions and helpers
 --   1. Reference tables (the template system): domains, parameter_defs, defect_types
 --   2. User setup tables: user_settings, machines, materials, projects
@@ -25,6 +26,59 @@
 --   7. Grants
 --   8. FDM seed data
 -- =====================================================================
+
+
+-- =====================================================================
+-- P. PREFLIGHT
+-- =====================================================================
+-- `create table if not exists` makes this file idempotent against ITSELF,
+-- but it silently skips any table that already exists with a different
+-- shape. On 2026-09-23 that is exactly what happened: the live project held
+-- an unrelated schema reusing these table names, and this file failed
+-- partway through instead of saying why.
+--
+-- This block checks one signature column per table. A table that exists
+-- without its signature column is not ours, and the run stops here, before
+-- any other statement executes, with a message naming the fix.
+
+do $preflight$
+declare
+  sig   record;
+  found text := '';
+begin
+  for sig in
+    select * from (values
+      ('domains',        'unit_label'),
+      ('parameter_defs', 'group_name'),
+      ('defect_types',   'is_process_related'),
+      ('machines',       'power_watts'),
+      ('materials',      'package_qty'),
+      ('projects',       'client'),
+      ('runs',           'units_produced'),
+      ('run_defects',    'photo_path'),
+      ('user_settings',  'include_labor_in_cost')
+    ) as t(table_name, signature_column)
+  loop
+    if to_regclass('public.' || sig.table_name) is not null
+       and not exists (
+         select 1
+         from information_schema.columns c
+         where c.table_schema = 'public'
+           and c.table_name   = sig.table_name
+           and c.column_name  = sig.signature_column
+       )
+    then
+      found := found || format(' %s (no %s)', sig.table_name, sig.signature_column);
+    end if;
+  end loop;
+
+  if found <> '' then
+    raise exception using
+      message = 'SpoolStack schema.sql stopped: these tables exist but are not the SpoolStack schema:' || found,
+      hint    = 'Run db/reset_foreign_schema.sql first. It refuses to drop anything if user tables contain data. Nothing was changed by this run.';
+  end if;
+end
+$preflight$;
 
 
 -- =====================================================================
@@ -223,14 +277,31 @@ create trigger trg_materials_updated_at
 create table if not exists public.projects (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references auth.users(id) on delete cascade,
-  name        text not null,
-  description text,
-  client      text,
-  status      text not null default 'active' check (status in ('active','archived')),
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now(),
+  name            text not null,
+  description     text,
+  client          text,
+  sale_price      numeric(12,2) check (sale_price >= 0),     -- per unit; Phase 2 margin
+  target_quantity integer check (target_quantity > 0),       -- planned units; Phase 2 batch curve
+  status          text not null default 'active' check (status in ('active','archived')),
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
   constraint projects_user_name_uniq unique (user_id, name)
 );
+
+-- These two columns were added after the first version of this file. The
+-- create above skips an existing table, so a database built from the earlier
+-- version gets them here instead. No-ops on a fresh install.
+alter table public.projects
+  add column if not exists sale_price numeric(12,2) check (sale_price >= 0);
+alter table public.projects
+  add column if not exists target_quantity integer check (target_quantity > 0);
+
+comment on column public.projects.sale_price is
+  'Price per unit if the project is sold. Nullable: most hobby projects are not. '
+  'Phase 2 reads it against run_cost_breakdown.cost_per_good_unit for margin.';
+comment on column public.projects.target_quantity is
+  'How many units the project is meant to produce. Lets Phase 2 place a project on '
+  'its own economies-of-scale curve. Adopted from the pre-existing live schema, 2026-09-23.';
 
 drop trigger if exists trg_projects_updated_at on public.projects;
 create trigger trg_projects_updated_at
