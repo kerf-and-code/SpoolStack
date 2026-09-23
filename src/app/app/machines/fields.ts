@@ -7,7 +7,7 @@ import { inputValue } from '@/lib/format';
 export type MachineRow = Tables<'machines'>;
 
 export function machineFieldGroups(
-  machine: MachineRow | null,
+  machine: Partial<MachineRow> | null,
   domainOptions: { value: string; label: string }[],
   currency: string,
 ): FieldGroup[] {

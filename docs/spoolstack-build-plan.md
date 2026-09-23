@@ -3,7 +3,7 @@
 **From spec to shipped Phase 1.**
 Kerf and Code LLC. Written 2026-09-20. Supersedes the Phase 0 feasibility doc of 2026-08-01.
 
-> **Status, 2026-09-23:** M0, M1 and M2 complete on the live app. M3 (gcode import) is built and waiting on its real-file test. Domain `spool-stack.com` is bought and connects in M5. Current state and the log of what changed are in section 8.
+> **Status, 2026-09-23 (night):** M0 to M3 complete on the live app. M4 (journal) and M5 (ship) are built and verified locally, waiting to be committed and exit-tested. Domain `spool-stack.com` is bought; connecting it is a manual checklist (M5 item 8) with no code change left. Current state and the log of what changed are in section 8.
 
 ---
 
@@ -166,13 +166,15 @@ Six milestones. Each one ends in something you can check, not something you feel
    - **Never preload prices.** Machine and filament prices go stale and vary by seller. A preloaded price that's wrong for you produces a confidently wrong cost, which is exactly what "blank means unknown" exists to prevent.
    - Keep it small and curated: about 20 printers and about 15 filament types, from manufacturer spec sheets, not scraped. New printers ship every few months, so the catalog has a maintenance cost; the M3 file-based offer covers the long tail for free.
 
+   **As built (M5):** code constants in `src/lib/presets.ts`, not tables. 18 printers and 11 filament types, each printer with its source noted in the file. A picker on Add machine and Add material sets `?preset=` and pre-fills the form; the saved row is an ordinary row with no link back. Reasons: no SQL to run by hand, the list is reviewed in a pull request like any other change, and nothing needs `model_id` until Phase 3 exists. Move it to tables when users need to add presets themselves. No wattage hint shipped: the form's help text already says to use a plug meter. Nozzle size is left blank where the source did not state it.
+
 8. **Connect `spool-stack.com`** (bought 2026-09-23). Done late on purpose: until real users exist, the vercel.app address costs nothing, and a domain switch resets everyone's sign-in once. In this order:
    1. **Vercel**, Settings, Domains: add `spool-stack.com` and `www.spool-stack.com`, and redirect `www` to the bare domain so there is one canonical address.
    2. **DNS** at the registrar: add exactly the records Vercel shows on that page. Wait for Vercel to show both as valid.
    3. **Supabase**, Authentication, URL Configuration: Site URL becomes `https://spool-stack.com`, and add `https://spool-stack.com/**` to Redirect URLs. Keep the vercel.app and localhost entries so nothing breaks mid-switch.
    4. **Google OAuth** (if set up by then): no change. Google redirects to the Supabase callback, not to the app.
    5. **Test:** sign in on `https://spool-stack.com` with a magic link, and confirm the email link points at spool-stack.com, not vercel.app.
-   6. **Code:** the canonical URL, sitemap and JSON-LD from item 6 use `https://spool-stack.com`.
+   6. **Code:** nothing to do. `src/lib/site.ts` reads Vercel's `VERCEL_PROJECT_PRODUCTION_URL`, so the canonical URL, sitemap, robots and JSON-LD move to `spool-stack.com` on the first deploy after the domain is set as production in Vercel. Check `/sitemap.xml` after that deploy. `NEXT_PUBLIC_SITE_URL` overrides it if ever needed.
    Auth cookies are per domain, so everyone signs in once more after the switch. No data is affected.
 
 **Exit criteria, and the real definition of Phase 1 done:** you log your own prints for two consecutive weeks without opening a spreadsheet once. If you reach for the spreadsheet, the thing that pulled you back is the next bug to fix.
@@ -233,20 +235,24 @@ SpoolStack/
     schema.sql                  <- the whole Phase 1 data model, idempotent
   src/
     app/
-      (marketing)/              <- server-rendered public pages, M5
-      (app)/                    <- authenticated app
+      page.tsx, privacy/        <- server-rendered public pages
+      manifest.ts, robots.ts, sitemap.ts, icons, OG image
+      app/                      <- authenticated app, served at /app
         runs/
         machines/
         materials/
+        projects/
         settings/
-      auth/
+      auth/                     <- OAuth / magic-link callback, sign-out
+      sign-in/
     components/
     lib/
       gcodeParse.ts             <- client-side slicer metadata extractor
-      gcodeParse.test.ts        <- 14 tests, all passing
+      gcodeParse.test.ts        <- parser tests (npm run test:gcode)
+      presets.ts                <- machine and filament presets, M5
       supabase/                 <- browser / server / middleware clients
       database.types.ts         <- generated, do not hand-edit
-  public/
+  public/                       <- sw.js, offline.html, icons/
 ```
 
 ---
@@ -315,9 +321,24 @@ Two of the five are now answered.
 | M0 Foundations | **Done** | Live at `spool-stack-six.vercel.app`. Sign-in works. Live DB verified: RLS on all 9 tables, 27 policies, `run_cost_breakdown` has `security_invoker=true`, 25 parameter defs, 20 defect types. |
 | M1 Setup entities | **Done** | Machines, materials, projects and settings CRUD live. Exit test passed on real data: inline validation keeps typed values, material costed at $0.015/g through live RLS, duplicate names rejected in plain English, confirm before delete. |
 | M2 Run form | **Done** | A real run logged successfully on the live app. Stopwatch times (60 s fresh, 20 s repeat targets) not yet recorded. |
-| M3 Gcode import | Built, awaiting real-file test | `.gcode` and `.gcode.3mf` import on the run form; 47 tests across parser, form and import. Bambu header patterns unverified until a real file is imported. |
-| M4 Journal | Not started | |
-| M5 Ship | Not started | Includes setup presets (item 7) and connecting spool-stack.com (item 8). |
+| M3 Gcode import | **Done** | A real Bambu Studio 2.8 `.gcode.3mf` from an A1 imported on the live app: 267 min, 135.88 g, 21 settings. |
+| M4 Journal | Built, not yet committed | Run list with filters and paging, run detail, edit and delete, dashboard. 49 tests pass. Exit test (20 runs, filters, edit round-trip) runs after the push. |
+| M5 Ship | Built, not yet committed | See the M5 breakdown below. 60 tests pass across four suites; type-check, lint and production build clean. |
+
+**M5 item by item:**
+
+| Item | State |
+|---|---|
+| 1. Mobile first | Partly. New pages are phone-first; a dedicated one-handed pass on the run form waits for real use at the printer, so it is driven by what is actually awkward. |
+| 2. PWA | **Done.** Manifest, icons (any and maskable), apple icon, favicon, theme colours, install shortcuts for Log a run and Runs. Service worker is deliberately minimal: shows `/offline.html` when a page load fails offline and caches nothing else, so no signed-in page can ever be served stale. Verified in Chromium: registers, controls the page, serves the offline page, and gets out of the way when back online. |
+| 3. Empty states that teach | Not started. Touches the M4 dashboard, so it follows the M4 commit. |
+| 4. Sentry | **Deferred.** Needs an account and a DSN. In its place: an error boundary inside `/app` (keeps the nav, shows a reference digest that matches the Vercel function log), a global error page, and not-found pages for the site and for `/app`. |
+| 5. Marketing page | **Done.** Rewritten so every claim is true of the shipped app; costing and later phases are listed under "Coming next", not sold as built. Plus `/privacy`. |
+| 6. SEO | **Done in code:** `metadataBase`, Open Graph and Twitter cards with a 1200x630 image, canonical links, `robots.txt` (disallows `/app` and `/auth`), `sitemap.xml`, JSON-LD `SoftwareApplication` with a free offer and no ratings. **Manual, after the domain:** Google Search Console and Bing verification. |
+| 7. Presets | **Done,** as code constants. See item 7 above. |
+| 8. Domain | Manual checklist in item 8. No code change remains. |
+
+Also in M5: security headers from the Next 16 PWA guide (nosniff, frame DENY, strict referrer; no-cache and a CSP on `sw.js`), the proxy no longer runs on the service worker, manifest, offline page, robots or sitemap, and the import matcher now prefers exact printer matches, so owning both an A1 and an A1 mini still auto-selects the right one.
 
 **Live infrastructure:** Supabase project `fpvmqelajzraqsylmjce` (West US). Vercel project `spool-stack`, production domain `spool-stack-six.vercel.app` until `spool-stack.com` is connected (bought 2026-09-23, M5 item 8). Repo `github.com/kerf-and-code/SpoolStack`, local `C:\Users\Test\SpoolStack`.
 
@@ -328,6 +349,10 @@ Two of the five are now answered.
 - **Adopted from that old schema:** `projects.sale_price` and `projects.target_quantity`, both useful for Phase 2 margin and batch curves.
 - **Marketing at `/`, app at `/app`** from M0 rather than M5, so no route retrofit later.
 - **Archive by default, delete only when unused**, for machines, materials and projects. The run foreign keys are `ON DELETE SET NULL`, so deleting a used machine would silently strip its cost from every run.
+- **Presets are code, not tables** (M5 item 7). See the "As built" note there.
+- **Sentry deferred** (M5 item 4) until there is an account and a DSN; error boundaries ship in its place.
+- **The service worker does offline-page only.** An app-shell cache for a signed-in, server-rendered app risks showing one session's page to the next; the offline queue in open question 5 is the real answer to bad garage wifi.
+- **Site address resolves itself** from `VERCEL_PROJECT_PRODUCTION_URL`, so the domain switch needs no code change.
 
 ### Operational lessons, so they are not relearned
 
@@ -339,5 +364,7 @@ Two of the five are now answered.
 
 ### Next actions
 
-1. **M2, the run form.** Stopwatch targets: under 60 seconds for a fresh manual run, under 20 seconds for a repeat via "Copy from last run".
-2. Then M3 (gcode import UI, including the offer to create a machine from the file), M4 (journal), M5 (ship, including presets).
+1. **Commit M4, then M5,** each after its own build. Then the M4 exit test on the live app, and fix the two known bad runs (the 3853-minute mistype and the Copy test duplicate) through the new edit and delete.
+2. **Install check on a phone:** open the live site, Add to Home Screen, confirm it opens to `/app` with the new icon.
+3. **Connect `spool-stack.com`** (M5 item 8), then Search Console and Bing verification.
+4. **Empty states** (M5 item 3), then the two-week dogfood that closes Phase 1. Stopwatch targets from M2 still to record: under 60 seconds fresh, under 20 seconds repeat.

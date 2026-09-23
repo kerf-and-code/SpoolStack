@@ -27,16 +27,21 @@ export function norm(s: string | null | undefined): string {
  * Machines whose name, model, or make+model matches the file's printer model.
  * Short tokens (under 3 characters after normalising) never match by
  * containment, so a model of "X" does not match every printer with an x in it.
+ *
+ * Exact matches win over containment. Without that, someone who owns both an
+ * A1 and an A1 mini gets neither auto-selected, because "Bambu Lab A1" is
+ * contained in "Bambu Lab A1 mini" and the other way round.
  */
 export function matchMachines<T extends MachineLike>(printerModel: string | null, machines: T[]): T[] {
   const target = norm(printerModel);
   if (target.length < 2) return [];
-  return machines.filter((m) => {
-    const candidates = [m.name, m.model, [m.make, m.model].filter(Boolean).join(' ')].map(norm).filter(Boolean);
-    return candidates.some(
-      (c) => c === target || (c.length >= 3 && target.includes(c)) || (target.length >= 3 && c.includes(target)),
-    );
-  });
+  const candidatesOf = (m: T) =>
+    [m.name, m.model, [m.make, m.model].filter(Boolean).join(' ')].map(norm).filter(Boolean);
+  const exact = machines.filter((m) => candidatesOf(m).some((c) => c === target));
+  if (exact.length > 0) return exact;
+  return machines.filter((m) =>
+    candidatesOf(m).some((c) => (c.length >= 3 && target.includes(c)) || (target.length >= 3 && c.includes(target))),
+  );
 }
 
 export type MaterialMatch<T> =

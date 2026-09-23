@@ -30,7 +30,7 @@ const UNIT_LABELS: Record<(typeof MATERIAL_UNITS)[number], string> = {
 const CATEGORY_SUGGESTIONS = Object.keys(MATERIAL_DENSITY_G_CM3);
 
 export function materialFieldGroups(
-  material: MaterialRow | null,
+  material: Partial<MaterialRow> | null,
   domainOptions: { value: string; label: string }[],
   currency: string,
 ): FieldGroup[] {

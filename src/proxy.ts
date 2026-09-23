@@ -15,9 +15,11 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Every path except static assets and image files. The auth cookie has to
-     * be refreshed on real page and API requests, not on every favicon fetch.
+     * Every path except static assets, image files and the public PWA and SEO
+     * files. The auth cookie has to be refreshed on real page and API
+     * requests, not on every favicon fetch, and the service worker, manifest,
+     * offline page, robots and sitemap must never be redirected to sign-in.
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    '/((?!_next/static|_next/image|favicon\\.ico|sw\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|sitemap\\.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 };
