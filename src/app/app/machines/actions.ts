@@ -83,6 +83,63 @@ export async function setMachineActive(id: string, active: boolean): Promise<voi
   redirect(`/app/machines?notice=${active ? 'restored' : 'archived'}`);
 }
 
+export type QuickMachineResult =
+  | {
+      ok: true;
+      machine: { id: string; name: string; domain_id: string; make: string | null; model: string | null };
+    }
+  | { ok: false; message: string };
+
+/**
+ * One-tap machine creation from a gcode import, without leaving the run form
+ * (which would lose the imported values). Name and model come from the
+ * file's printer_model; the cost fields stay blank and show as missing on the
+ * Machines page, so nothing is guessed.
+ */
+export async function createMachineFromImport(printerModel: string): Promise<QuickMachineResult> {
+  const { supabase, userId } = await requireUser();
+  const name = String(printerModel ?? '').trim().slice(0, 80);
+  if (name.length < 2) return { ok: false, message: 'The file did not name a printer.' };
+
+  const columns = 'id, name, domain_id, make, model';
+  const { data, error } = await supabase
+    .from('machines')
+    .insert({ user_id: userId, domain_id: 'fdm', name, model: name })
+    .select(columns)
+    .single();
+
+  if (error) {
+    if (error.code === '23505') {
+      // Same name already exists. Use it if active; an archived one needs a
+      // deliberate restore, not a silent resurrection.
+      const { data: existing } = await supabase
+        .from('machines')
+        .select(`${columns}, is_active`)
+        .eq('name', name)
+        .maybeSingle();
+      if (existing?.is_active) {
+        return {
+          ok: true,
+          machine: {
+            id: existing.id,
+            name: existing.name,
+            domain_id: existing.domain_id,
+            make: existing.make,
+            model: existing.model,
+          },
+        };
+      }
+      if (existing) {
+        return { ok: false, message: `You have an archived machine named ${name}. Restore it on the Machines page to use it.` };
+      }
+    }
+    return { ok: false, message: dbErrorMessage(error, 'machine') };
+  }
+
+  revalidatePath('/app/machines');
+  return { ok: true, machine: data };
+}
+
 /**
  * Hard delete, only for a machine no run has used. runs.machine_id is
  * ON DELETE SET NULL, so deleting a used machine would silently strip it from

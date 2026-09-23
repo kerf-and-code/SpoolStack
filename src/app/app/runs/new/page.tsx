@@ -10,8 +10,12 @@ export default async function NewRunPage() {
   const { supabase } = await requireUser();
 
   const [machines, materials, projects, defs, defects, recent] = await Promise.all([
-    supabase.from('machines').select('id, name, domain_id').eq('is_active', true).order('name'),
-    supabase.from('materials').select('id, name, unit, domain_id').eq('is_active', true).order('name'),
+    supabase.from('machines').select('id, name, domain_id, make, model').eq('is_active', true).order('name'),
+    supabase
+      .from('materials')
+      .select('id, name, unit, domain_id, category, brand')
+      .eq('is_active', true)
+      .order('name'),
     supabase.from('projects').select('id, name').eq('status', 'active').order('name'),
     supabase
       .from('parameter_defs')

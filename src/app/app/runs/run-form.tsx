@@ -4,6 +4,7 @@
 // slow, the log never fills, and every later feature reads the log.
 //
 // Layout, top to bottom, in the order you know things at the printer:
+//   0. Import from a slicer file: fills duration, material and settings.
 //   1. Copy from last run: most prints repeat the previous one.
 //   2. Quick log: machine, material, outcome, duration, material used, parts,
 //      plus any parameter the dictionary marks is_required (for FDM: nozzle
@@ -21,10 +22,15 @@
 import Link from 'next/link';
 import { startTransition, useActionState, useMemo, useState, useSyncExternalStore } from 'react';
 import { formatDuration } from '@/lib/duration';
+import { readSlicedFile, titleFromFileName } from '@/lib/gcode-file';
+import { parseGcode, validateParameters, type ParameterDef } from '@/lib/gcodeParse';
 import { idleState } from '@/lib/forms';
+import { matchMachines, matchMaterial } from '@/lib/import-match';
 import { PARAM_PREFIX, parametersToFields, type ParamDefRow } from '@/lib/run-params';
+import { createMachineFromImport } from '../machines/actions';
 import { saveRun } from './actions';
-import { OUTCOMES, type Outcome, type RecentRun, type RunFormData } from './types';
+import { ImportPanel, type ImportSummary, type MachineStatus, type MaterialStatus } from './import-panel';
+import { OUTCOMES, type MachineOption, type Outcome, type RecentRun, type RunFormData } from './types';
 
 const OUTCOME_STYLE: Record<Outcome, { label: string; on: string }> = {
   success: { label: 'Success', on: 'border-emerald-600 bg-emerald-600 text-white' },
@@ -83,6 +89,13 @@ export function RunForm({ data }: { data: RunFormData }) {
   const [showDefectsOnSuccess, setShowDefectsOnSuccess] = useState(false);
   const [copiedFrom, setCopiedFrom] = useState<RecentRun | null>(null);
 
+  // A machine can be added mid-form from a gcode import, so the list is state.
+  const [machineList, setMachineList] = useState<MachineOption[]>(machines);
+  const [imported, setImported] = useState<ImportSummary | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [addingMachine, setAddingMachine] = useState(false);
+
   // Dates are formatted only on the client: the server renders in UTC, and a
   // server/client mismatch would be a hydration error. useSyncExternalStore
   // returns false during SSR and hydration, true afterwards, with no effect.
@@ -94,7 +107,7 @@ export function RunForm({ data }: { data: RunFormData }) {
 
   const set = (name: string, value: string) => setValues((prev) => ({ ...prev, [name]: value }));
 
-  const machine = machines.find((m) => m.id === values.machine_id) ?? null;
+  const machine = machineList.find((m) => m.id === values.machine_id) ?? null;
   const material = materials.find((m) => m.id === values.material_id) ?? null;
   const domainId = machine?.domain_id ?? material?.domain_id ?? 'fdm';
 
@@ -128,11 +141,18 @@ export function RunForm({ data }: { data: RunFormData }) {
 
   const candidate = bestMatch(recentRuns, values.machine_id, values.material_id);
 
+  /** Every parameter field set to blank, so a copy or import never mixes with values already there. */
+  function blankParams(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const d of parameterDefs) out[PARAM_PREFIX + d.key] = '';
+    return out;
+  }
+
   function copyFrom(run: RecentRun) {
     setValues((prev) => ({
       ...prev,
       // Keep a machine or material already chosen; fill them only if empty.
-      machine_id: prev.machine_id || (run.machine_id && machines.some((m) => m.id === run.machine_id) ? run.machine_id : ''),
+      machine_id: prev.machine_id || (run.machine_id && machineList.some((m) => m.id === run.machine_id) ? run.machine_id : ''),
       material_id: prev.material_id || (run.material_id && materials.some((m) => m.id === run.material_id) ? run.material_id : ''),
       project_id: run.project_id && projects.some((p) => p.id === run.project_id) ? run.project_id : '',
       title: run.title ?? '',
@@ -140,6 +160,9 @@ export function RunForm({ data }: { data: RunFormData }) {
       material_qty_used: run.material_qty_used !== null ? String(run.material_qty_used) : '',
       units_produced: String(run.units_produced),
       active_labor_minutes: run.active_labor_minutes > 0 ? String(run.active_labor_minutes) : '',
+      // Cleared first: a setting typed before copying must not survive into a
+      // record that now claims to be last run's settings.
+      ...blankParams(),
       ...parametersToFields(run.parameters, parameterDefs),
       // Deliberately NOT copied: outcome, defects, quality, notes, finish time.
       // Those describe this run, and copying them would quietly repeat last
@@ -147,6 +170,150 @@ export function RunForm({ data }: { data: RunFormData }) {
     }));
     setWeighed(false);
     setCopiedFrom(run);
+    // The record is now last run's, not the file's.
+    setImported(null);
+    setImportError(null);
+  }
+
+  async function importFile(file: File) {
+    setImporting(true);
+    setImportError(null);
+    try {
+      const read = await readSlicedFile(file);
+      if (!read.ok) {
+        setImportError(read.message);
+        return;
+      }
+      const parsed = parseGcode(read.text);
+
+      // Gcode is FDM. Validate against the FDM dictionary, and drop anything
+      // clamped: an out-of-range value from a file is shown, not stored.
+      const fdmDefs = parameterDefs.filter((d) => d.domain_id === 'fdm');
+      const validation = validateParameters(parsed.parameters, fdmDefs as unknown as ParameterDef[]);
+      const accepted = { ...validation.accepted };
+      const outOfRange: ImportSummary['outOfRange'] = [];
+      for (const [key, [original]] of Object.entries(validation.clamped)) {
+        delete accepted[key];
+        const def = fdmDefs.find((d) => d.key === key);
+        outOfRange.push({
+          label: def?.display_name ?? key,
+          value: original,
+          range: def ? `${def.min_value} to ${def.max_value}${def.unit ? ` ${def.unit}` : ''}` : 'a different range',
+        });
+      }
+
+      // Machine: auto-select only on exactly one match.
+      let machineId = values.machine_id;
+      let machineStatus: MachineStatus = { kind: 'none' };
+      if (parsed.printerModel) {
+        const matches = matchMachines(parsed.printerModel, machineList);
+        const current = matches.find((m) => m.id === machineId);
+        if (current) machineStatus = { kind: 'kept', name: current.name };
+        else if (matches.length === 1) {
+          machineId = matches[0].id;
+          machineStatus = { kind: 'selected', name: matches[0].name };
+        } else if (matches.length > 1) {
+          machineStatus = { kind: 'ambiguous', model: parsed.printerModel, names: matches.map((m) => m.name) };
+        } else {
+          machineStatus = {
+            kind: 'offer',
+            model: parsed.printerModel,
+            current: machineList.find((m) => m.id === machineId)?.name ?? null,
+          };
+        }
+      }
+
+      // Material: same rule, with brand as the tie-breaker.
+      let materialId = values.material_id;
+      let materialStatus: MaterialStatus = { kind: 'none' };
+      if (parsed.filamentType) {
+        const m = matchMaterial(parsed.filamentType, parsed.filamentBrand, materials, materialId);
+        if (m.kind === 'keep') materialStatus = { kind: 'kept', name: m.material.name };
+        else if (m.kind === 'select') {
+          materialId = m.material.id;
+          materialStatus = { kind: 'selected', name: m.material.name };
+        } else if (m.kind === 'ambiguous') {
+          materialStatus = { kind: 'ambiguous', type: parsed.filamentType, names: m.candidates.map((c) => c.name) };
+        } else materialStatus = { kind: 'unmatched', type: parsed.filamentType };
+      }
+
+      const paramFields = parametersToFields(accepted, fdmDefs);
+      const notes = [...read.notes, ...parsed.warnings];
+
+      setValues((prev) => ({
+        ...prev,
+        machine_id: machineId,
+        material_id: materialId,
+        // The file defines this record: a value it does not contain is blank,
+        // not left over from whatever was typed or copied before.
+        duration: parsed.durationMinutes !== null ? formatDuration(parsed.durationMinutes) : '',
+        material_qty_used: parsed.materialQtyUsedG !== null ? String(parsed.materialQtyUsedG) : '',
+        title: prev.title || titleFromFileName(read.fileName),
+        ...blankParams(),
+        ...paramFields,
+      }));
+      setWeighed(false);
+      setCopiedFrom(null);
+      setImported({
+        fileName: read.fileName,
+        plate: read.plate,
+        slicer: parsed.slicer,
+        durationMinutes: parsed.durationMinutes,
+        grams: parsed.materialQtyUsedG,
+        materialSource: parsed.materialSource,
+        unit: materials.find((m) => m.id === materialId)?.unit ?? 'g',
+        settingsFilled: Object.keys(paramFields).length,
+        outOfRange,
+        notes,
+        machine: machineStatus,
+        material: materialStatus,
+        metadataJson: JSON.stringify({
+          parser_version: 2,
+          file_name: read.fileName,
+          file_kind: read.kind,
+          plate: read.plate,
+          slicer: parsed.slicer,
+          printer_model: parsed.printerModel,
+          filament_type: parsed.filamentType,
+          filament_brand: parsed.filamentBrand,
+          material_source: parsed.materialSource,
+          raw: parsed.raw,
+          notes,
+          clamped: validation.clamped,
+          rejected: validation.rejected,
+        }),
+      });
+      // Settings live in a collapsed section. Open it so the user sees what
+      // the file filled in before saving.
+      if (Object.keys(paramFields).length > 0) setShowSettings(true);
+    } catch (e) {
+      setImportError(`Could not read that file. ${e instanceof Error ? e.message : ''}`.trim());
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function addMachineFromFile(model: string) {
+    setAddingMachine(true);
+    try {
+      const result = await createMachineFromImport(model);
+      if (!result.ok) {
+        setImported((s) => (s ? { ...s, machine: { kind: 'error', model, message: result.message } } : s));
+        return;
+      }
+      const added = result.machine;
+      setMachineList((list) =>
+        list.some((m) => m.id === added.id) ? list : [...list, added].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      set('machine_id', added.id);
+      setImported((s) => (s ? { ...s, machine: { kind: 'created', name: added.name } } : s));
+    } catch {
+      setImported((s) =>
+        s ? { ...s, machine: { kind: 'error', model, message: 'Could not add the machine. Try again.' } } : s,
+      );
+    } finally {
+      setAddingMachine(false);
+    }
   }
 
   function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -170,6 +337,18 @@ export function RunForm({ data }: { data: RunFormData }) {
   return (
     <form onSubmit={onSubmit} noValidate className="pb-28">
       <input type="hidden" name="domain_id" value={domainId} />
+      <input type="hidden" name="source" value={imported ? 'gcode_import' : 'manual'} />
+      {imported ? <input type="hidden" name="source_metadata" value={imported.metadataJson} /> : null}
+
+      {/* ------------------------------------------------- import from file */}
+      <ImportPanel
+        importing={importing}
+        error={importError}
+        summary={imported}
+        addingMachine={addingMachine}
+        onFile={importFile}
+        onAddMachine={addMachineFromFile}
+      />
 
       {/* ------------------------------------------------ copy from last run */}
       {candidate ? (
@@ -203,14 +382,14 @@ export function RunForm({ data }: { data: RunFormData }) {
               className={inputClass}
               aria-invalid={errors.machine_id ? true : undefined}
             >
-              <option value="">{machines.length === 0 ? 'No machines yet' : 'Choose a machine'}</option>
-              {machines.map((m) => (
+              <option value="">{machineList.length === 0 ? 'No machines yet' : 'Choose a machine'}</option>
+              {machineList.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}
                 </option>
               ))}
             </select>
-            {machines.length === 0 ? (
+            {machineList.length === 0 ? (
               <Link href="/app/machines/new" className="mt-1 inline-block text-xs underline underline-offset-2">
                 Add a machine for energy and wear cost
               </Link>

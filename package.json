@@ -9,11 +9,13 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test:gcode": "node --experimental-strip-types src/lib/gcodeParse.test.ts",
-    "test:run-form": "node --experimental-strip-types src/lib/run-form.test.ts"
+    "test:run-form": "node --experimental-strip-types src/lib/run-form.test.ts",
+    "test:import": "node --experimental-strip-types src/lib/gcode-import.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.0",
+    "fflate": "^0.8.3",
     "next": "16.3.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",

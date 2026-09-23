@@ -11,6 +11,9 @@ export interface MachineOption {
   id: string;
   name: string;
   domain_id: string;
+  /** Make and model let a gcode file's printer_model find this machine. */
+  make: string | null;
+  model: string | null;
 }
 
 export interface MaterialOption {
@@ -18,6 +21,9 @@ export interface MaterialOption {
   name: string;
   unit: string;
   domain_id: string;
+  /** Category and brand let a gcode file's filament_type find this material. */
+  category: string | null;
+  brand: string | null;
 }
 
 export interface ProjectOption {

@@ -65,6 +65,26 @@ export async function saveRun(_prev: FormState, formData: FormData): Promise<For
     else completedAt = d.toISOString();
   }
 
+  // Where the numbers came from. For an import, source_metadata keeps the
+  // parser's raw matches as evidence, so a future parser fix can re-read old
+  // runs and a wrong value can be traced to the line that produced it.
+  const source = fields.source === 'gcode_import' ? 'gcode_import' : 'manual';
+  let sourceMetadata: Json = {};
+  if (source === 'gcode_import') {
+    const rawMeta = fields.source_metadata ?? '';
+    let ok = rawMeta.length > 0 && rawMeta.length <= 20_000;
+    if (ok) {
+      try {
+        const obj: unknown = JSON.parse(rawMeta);
+        ok = obj !== null && typeof obj === 'object' && !Array.isArray(obj);
+        if (ok) sourceMetadata = obj as Json;
+      } catch {
+        ok = false;
+      }
+    }
+    if (!ok) return errorState('The imported file data was damaged. Import the file again.', errors);
+  }
+
   if (!parsed.success) {
     return errorState('Check the highlighted fields.', errors);
   }
@@ -173,7 +193,8 @@ export async function saveRun(_prev: FormState, formData: FormData): Promise<For
       quality_rating: v.quality_rating,
       parameters: params.values as Json,
       notes: v.notes,
-      source: 'manual',
+      source,
+      source_metadata: sourceMetadata,
     })
     .select('id')
     .single();

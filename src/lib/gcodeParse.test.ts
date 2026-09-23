@@ -131,6 +131,25 @@ M109 S205
 G28 ;Home
 `;
 
+// Bambu Studio's HEADER_BLOCK, as it opens a plate gcode inside a .gcode.3mf.
+// Shape written from recollection of Bambu Studio 1.9/1.10 output and NOT
+// yet checked against a real export: the M3 exit test replaces this with a
+// real file's header. The config block that closes the file is omitted here
+// on purpose, so this proves the header alone is enough.
+const BAMBU_HEADER_ONLY = `
+; HEADER_BLOCK_START
+; BambuStudio 01.09.00.70
+; model printing time: 1h 40m 5s; total estimated time: 1h 46m 43s
+; total layer number: 150
+; total filament length [mm] : 4520.08
+; total filament volume [cm^3] : 10871.97
+; total filament weight [g] : 13.48
+; filament_density: 1.24
+; filament_diameter: 1.75
+; max_z_height: 30.00
+; HEADER_BLOCK_END
+`;
+
 const NO_METADATA = `
 G28
 G1 X10 Y10 Z0.2 F1200
@@ -290,6 +309,29 @@ test('Cura: seconds, metres, and temperatures recovered from commands', () => {
 // --------------------------------------------------------------------------
 // degenerate input
 // --------------------------------------------------------------------------
+
+test('Bambu Studio header block alone: duration, stated grams, slicer', () => {
+  const r = parseGcode(BAMBU_HEADER_ONLY);
+  assert.equal(r.durationMinutes, 106.72, 'total estimated time, 1h 46m 43s');
+  assert.equal(r.materialQtyUsedG, 13.48);
+  assert.equal(r.materialSource, 'stated_grams');
+  assert.equal(r.slicer, 'BambuStudio 01.09.00.70');
+});
+
+test('Bambu header: the [cm^3] volume line is never used, even without grams', () => {
+  const noGrams = BAMBU_HEADER_ONLY.replace(/^; total filament weight.*$/m, '');
+  const r = parseGcode(noGrams);
+  // Falls to length x geometry (4520.08 mm of 1.75 mm at 1.24) = 13.49 g,
+  // not 10871.97 x 1.24 = 13481 g from the mislabelled volume.
+  assert.equal(r.materialSource, 'from_length');
+  assert.ok(r.materialQtyUsedG !== null && Math.abs(r.materialQtyUsedG - 13.49) < 0.05, `got ${r.materialQtyUsedG}`);
+});
+
+test('the file density is preferred over the lookup table', () => {
+  const r = parseGcode('; filament_type = PETG\n; filament_density: 1.30\n; filament used [mm] = 1000\n');
+  // 1000 mm x pi x 0.875^2 = 2405.28 mm3 = 2.405 cm3; x 1.30 = 3.13 g (PETG table would give 3.05)
+  assert.equal(r.materialQtyUsedG, 3.13);
+});
 
 test('a file with no metadata fails soft, with warnings instead of an exception', () => {
   const r = parseGcode(NO_METADATA);
