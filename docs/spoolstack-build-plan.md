@@ -3,6 +3,8 @@
 **From spec to shipped Phase 1.**
 Kerf and Code LLC. Written 2026-09-20. Supersedes the Phase 0 feasibility doc of 2026-08-01.
 
+> **Status, 2026-09-23:** M0 and M1 complete and passing their exit tests on the live app. Next is M2, the run form. Current state and the log of what changed are in section 8.
+
 ---
 
 ## 0. Where this starts
@@ -126,6 +128,7 @@ Six milestones. Each one ends in something you can check, not something you feel
 5. `materialEstimated = true` renders a subtle "estimated" tag on the grams field with a nudge to weigh it. Mass accuracy is what Phase 2 costing is made of.
 6. Set `source = 'gcode_import'`, store `raw` in `source_metadata`. That is your evidence trail when a future slicer version changes its comment format.
 7. Surface `validation.rejected` quietly ("2 settings not recognised") and `validation.clamped` loudly, because a clamp means either the file or the dictionary is wrong.
+8. **Offer to create the machine from the file.** The parser already returns `printerModel` and `filamentBrand`. When no existing machine matches, offer "This file came from a Bambu Lab P1S. Add it as a machine?" and prefill make and model. It's setup from the user's own data with zero catalog to maintain, and it's the cheap first half of the M5 presets item.
 
 **Exit criteria.** One real file from each of PrusaSlicer, OrcaSlicer, Bambu Studio and Cura, exported from your own machine, imports with duration and mass correct. The unit tests already cover the formats; this checks the tests against reality.
 
@@ -157,6 +160,11 @@ Six milestones. Each one ends in something you can check, not something you feel
 4. Sentry.
 5. A real marketing page at `/`, server-rendered, with the app under `/app`. Next gives you crawlable HTML for free. Do it now and skip the Litmus SEO retrofit entirely.
 6. Google Search Console and Bing verification, sitemap, JSON-LD `SoftwareApplication`.
+7. **Setup presets: common printers and filaments to pick from** (requested 2026-09-23). Two read-only reference tables in the same pattern as `parameter_defs`: `machine_models` and `material_presets`. Picking a preset **copies** its values into the user's own row, which stays editable, and keeps a `model_id` link for later analytics. The rule that keeps it honest:
+   - **Preload physical specs only:** make, model, nozzle size, build volume, filament diameter, density by polymer. Spec-sheet facts that don't change.
+   - **Wattage as a hint, not a value:** shown as placeholder text ("typically ~110 W; a plug meter gives yours"). Real draw varies with bed temperature and enclosure.
+   - **Never preload prices.** Machine and filament prices go stale and vary by seller. A preloaded price that's wrong for you produces a confidently wrong cost, which is exactly what "blank means unknown" exists to prevent.
+   - Keep it small and curated: about 20 printers and about 15 filament types, from manufacturer spec sheets, not scraped. New printers ship every few months, so the catalog has a maintenance cost; the M3 file-based offer covers the long tail for free.
 
 **Exit criteria, and the real definition of Phase 1 done:** you log your own prints for two consecutive weeks without opening a spreadsheet once. If you reach for the spreadsheet, the thing that pulled you back is the next bug to fix.
 
@@ -291,15 +299,16 @@ Two of the five are now answered.
 
 ## 8. Immediate next actions
 
-1. Answer question 1 above.
-2. Create the Supabase project, run `db/schema.sql`, run the verification block at the end of it.
-3. Scaffold the Next app, commit the two files below into it.
+1. Scaffold the Next app into the repo. **`create-next-app` refuses a directory that already has files in it**, and the repo now has `db/`, `src/` and `README.md`. Scaffold to a sibling folder and merge, rather than moving the existing files out and back.
+2. Create the Supabase project (West US / Oregon), run `db/schema.sql`, run the verification block at the end of the file.
+3. Wire Supabase auth with `@supabase/ssr`, deploy to Vercel.
 4. Tell me when M0 is deployed and I will build M1.
 
-Files ready now:
+Files already on disk:
 
-| File | Save to |
+| File | Path |
 |---|---|
-| `schema.sql` | `C:\Users\Test\spoolstack\db\schema.sql` |
-| `gcodeParse.ts` | `C:\Users\Test\spoolstack\src\lib\gcodeParse.ts` |
-| `gcodeParse.test.ts` | `C:\Users\Test\spoolstack\src\lib\gcodeParse.test.ts` |
+| `schema.sql` | `C:\Users\Test\SpoolStack\db\schema.sql` |
+| `gcodeParse.ts` | `C:\Users\Test\SpoolStack\src\lib\gcodeParse.ts` |
+| `gcodeParse.test.ts` | `C:\Users\Test\SpoolStack\src\lib\gcodeParse.test.ts` |
+| `spoolstack-build-plan.md` | `C:\Users\Test\SpoolStack\docs\spoolstack-build-plan.md` |
