@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { InstallButton } from '@/components/install-button';
 import { requireUser } from '@/lib/auth';
 import { formatDuration } from '@/lib/duration';
 import { MACHINE_PRESETS, MATERIAL_PRESETS } from '@/lib/presets';
@@ -143,12 +144,16 @@ export default async function DashboardPage() {
             Log every print, good or bad. The failures are what make the costs honest.
           </p>
         </div>
-        <Link
-          href="/app/runs/new"
-          className="rounded-lg bg-foreground px-5 py-2.5 text-sm font-semibold text-background"
-        >
-          Log a run
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Renders nothing once installed, or where the browser cannot install. */}
+          <InstallButton align="right" />
+          <Link
+            href="/app/runs/new"
+            className="rounded-lg bg-foreground px-5 py-2.5 text-sm font-semibold text-background"
+          >
+            Log a run
+          </Link>
+        </div>
       </div>
 
       {setupFirst ? setupSection : null}

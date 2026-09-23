@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
+import { INSTALL_CAPTURE_SCRIPT } from "@/lib/install-prompt";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
 import "./globals.css";
 
@@ -63,6 +64,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {/* Catches the browser's one-time install prompt for the Install app
+            button. A plain inline script, so it runs while the HTML is still
+            parsing; next/script beforeInteractive runs later, from the Next
+            runtime, and was measured missing an early event. See
+            src/lib/install-prompt.ts. */}
+        <script id="install-capture" dangerouslySetInnerHTML={{ __html: INSTALL_CAPTURE_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col">
         {children}
         <ServiceWorkerRegister />

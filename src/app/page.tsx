@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { InstallButton } from '@/components/install-button';
 import type { Metadata } from 'next';
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from '@/lib/site';
 
@@ -139,9 +140,12 @@ export default function Home() {
         <section className="border-t border-black/10 py-16 dark:border-white/15">
           <h2 className="text-xl font-semibold tracking-tight">Keep it on your home screen</h2>
           <p className="mt-2 max-w-xl text-sm opacity-70">
-            SpoolStack installs like an app. On Android or desktop Chrome, use Install app from the browser menu.
-            On iPhone, tap Share, then Add to Home Screen. It opens straight to your log.
+            SpoolStack installs like an app and opens straight to your log. On Android or desktop Chrome, use
+            Install app from the browser menu. On iPhone, tap Share, then Add to Home Screen.
           </p>
+          <div className="mt-5">
+            <InstallButton variant="primary" />
+          </div>
         </section>
       </main>
 
