@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatDuration, parseDurationMinutes } from './duration.ts';
+import { formatDuration, formatDurationForInput, parseDurationMinutes } from './duration.ts';
 import { parameterDefsFixture } from './run-form.fixtures.ts';
 import { parametersToFields, parseParameterFields } from './run-params.ts';
 
@@ -142,4 +142,15 @@ test('parameters: round-trip through parametersToFields for copy-from-last-run',
   });
   const back = parseParameterFields(fields, defs);
   assert.deepEqual(back.values, stored);
+});
+
+test('formatDurationForInput round-trips stored durations exactly', () => {
+  for (const m of [266.98, 134, 0.5, 3853, 45.25, 1.02, 90]) {
+    const text = formatDurationForInput(m);
+    const back = parseDurationMinutes(text);
+    assert.equal(back.ok && back.minutes, m, `${m} -> "${text}" -> ${JSON.stringify(back)}`);
+  }
+  assert.equal(formatDurationForInput(266.98), '4h 26m 59s');
+  assert.equal(formatDurationForInput(134), '2h 14m');
+  assert.equal(formatDurationForInput(null), '');
 });

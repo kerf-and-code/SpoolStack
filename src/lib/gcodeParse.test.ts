@@ -131,23 +131,51 @@ M109 S205
 G28 ;Home
 `;
 
-// Bambu Studio's HEADER_BLOCK, as it opens a plate gcode inside a .gcode.3mf.
-// Shape written from recollection of Bambu Studio 1.9/1.10 output and NOT
-// yet checked against a real export: the M3 exit test replaces this with a
-// real file's header. The config block that closes the file is omitted here
-// on purpose, so this proves the header alone is enough.
-const BAMBU_HEADER_ONLY = `
+// REAL Bambu Studio 2.8.2 output, copied verbatim from a Bambu Lab A1 export
+// ("Large - Foot_plate_2.gcode.3mf", 2026-09-23). The whole header block,
+// then a subset of the config block's lines in their original form. In 2.8
+// the config block comes right after the header, near the top of the file.
+// Note there is no "filament used [g]" line anywhere in this file: grams come
+// only from "total filament weight [g]". And the "[cm^3]" volume is really
+// mm3 (135.88 g / 1.26 g/cm3 = 107.8 cm3, not 107841).
+const BAMBU_A1_REAL = `
 ; HEADER_BLOCK_START
-; BambuStudio 01.09.00.70
-; model printing time: 1h 40m 5s; total estimated time: 1h 46m 43s
-; total layer number: 150
-; total filament length [mm] : 4520.08
-; total filament volume [cm^3] : 10871.97
-; total filament weight [g] : 13.48
-; filament_density: 1.24
+; BambuStudio 02.08.02.60
+; model printing time: 4h 20m 43s; total estimated time: 4h 26m 59s
+; total layer number: 100
+; total filament length [mm] : 44835.33
+; total filament volume [cm^3] : 107841.61
+; total filament weight [g] : 135.88
+; model label id: 148,170,345,367
+; object max height: 20.00,20.00,20.00,20.00
+; filament_density: 1.26
 ; filament_diameter: 1.75
-; max_z_height: 30.00
+; max_z_height: 20.00
+; filament: 1
+; support_material_on_wipe_tower: 0
 ; HEADER_BLOCK_END
+; CONFIG_BLOCK_START
+; curr_bed_type = High Temp Plate
+; cool_plate_temp = 35
+; eng_plate_temp = 0
+; enable_support = 0
+; fan_max_speed = 80
+; filament_flow_ratio = 0.98
+; filament_settings_id = "Bambu PLA Basic @BBL A1"
+; filament_type = PLA
+; filament_vendor = "Bambu Lab"
+; hot_plate_temp = 65
+; layer_height = 0.2
+; nozzle_temperature = 220
+; outer_wall_speed = 200
+; printer_model = Bambu Lab A1
+; retraction_length = 0.8
+; sparse_infill_density = 15%
+; sparse_infill_pattern = grid
+; supertack_plate_temp = 45
+; textured_plate_temp = 65
+; wall_loops = 2
+; CONFIG_BLOCK_END
 `;
 
 const NO_METADATA = `
@@ -310,21 +338,45 @@ test('Cura: seconds, metres, and temperatures recovered from commands', () => {
 // degenerate input
 // --------------------------------------------------------------------------
 
-test('Bambu Studio header block alone: duration, stated grams, slicer', () => {
-  const r = parseGcode(BAMBU_HEADER_ONLY);
-  assert.equal(r.durationMinutes, 106.72, 'total estimated time, 1h 46m 43s');
-  assert.equal(r.materialQtyUsedG, 13.48);
+test('REAL Bambu A1 file: the values Bambu Studio 2.8 actually writes', () => {
+  const r = parseGcode(BAMBU_A1_REAL);
+  assert.equal(r.durationMinutes, 266.98, 'total estimated time 4h 26m 59s');
+  assert.equal(r.materialQtyUsedG, 135.88, 'from total filament weight [g]');
   assert.equal(r.materialSource, 'stated_grams');
-  assert.equal(r.slicer, 'BambuStudio 01.09.00.70');
+  assert.equal(r.slicer, 'BambuStudio 02.08.02.60');
+  assert.equal(r.printerModel, 'Bambu Lab A1');
+  assert.equal(r.filamentType, 'PLA');
+  assert.equal(r.filamentBrand, 'Bambu Lab', 'quotes stripped');
+  assert.equal(r.parameters.nozzle_temp, 220);
+  assert.equal(r.parameters.bed_temp, 65);
+  assert.equal(r.parameters.layer_height, 0.2);
+  assert.equal(r.parameters.flow_rate, 98);
+  assert.equal(r.parameters.infill_percent, 15);
+  assert.equal(r.parameters.wall_count, 2);
+  assert.equal(r.parameters.supports, false);
 });
 
-test('Bambu header: the [cm^3] volume line is never used, even without grams', () => {
-  const noGrams = BAMBU_HEADER_ONLY.replace(/^; total filament weight.*$/m, '');
+test('REAL Bambu file: bed temperature follows curr_bed_type, not the first plate key', () => {
+  const cool = parseGcode(BAMBU_A1_REAL.replace('curr_bed_type = High Temp Plate', 'curr_bed_type = Cool Plate'));
+  assert.equal(cool.parameters.bed_temp, 35);
+  const textured = parseGcode(
+    BAMBU_A1_REAL.replace('curr_bed_type = High Temp Plate', 'curr_bed_type = Textured PEI Plate').replace(
+      'textured_plate_temp = 65',
+      'textured_plate_temp = 60',
+    ),
+  );
+  assert.equal(textured.parameters.bed_temp, 60);
+  const supertack = parseGcode(BAMBU_A1_REAL.replace('curr_bed_type = High Temp Plate', 'curr_bed_type = Supertack Plate'));
+  assert.equal(supertack.parameters.bed_temp, 45);
+});
+
+test('REAL Bambu file: the mislabelled [cm^3] volume is never used, even without grams', () => {
+  const noGrams = BAMBU_A1_REAL.replace(/^; total filament weight.*$/m, '');
   const r = parseGcode(noGrams);
-  // Falls to length x geometry (4520.08 mm of 1.75 mm at 1.24) = 13.49 g,
-  // not 10871.97 x 1.24 = 13481 g from the mislabelled volume.
+  // Falls to length x geometry: 44835.33 mm of 1.75 mm at the file's 1.26
+  // density = 136.3 g. Reading the volume line would have given 135,880 g.
   assert.equal(r.materialSource, 'from_length');
-  assert.ok(r.materialQtyUsedG !== null && Math.abs(r.materialQtyUsedG - 13.49) < 0.05, `got ${r.materialQtyUsedG}`);
+  assert.ok(r.materialQtyUsedG !== null && Math.abs(r.materialQtyUsedG - 136.3) < 0.5, `got ${r.materialQtyUsedG}`);
 });
 
 test('the file density is preferred over the lookup table', () => {
@@ -390,7 +442,7 @@ test('parseAndValidate returns only dictionary-legal keys', () => {
 
 test('every parsed key across all fixtures exists in parameter_defs', () => {
   const known = new Set(FDM_DEFS.map((d) => d.key));
-  for (const [name, fixture] of Object.entries({ PRUSA, ORCA, BAMBU_AMS, CURA })) {
+  for (const [name, fixture] of Object.entries({ PRUSA, ORCA, BAMBU_AMS, BAMBU_A1_REAL, CURA })) {
     for (const key of Object.keys(parseGcode(fixture).parameters)) {
       assert.ok(known.has(key), `${name} produced unknown key: ${key}`);
     }

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requireUser } from '@/lib/auth';
+import { formatDuration } from '@/lib/duration';
 
 export const metadata: Metadata = {
   title: 'Dashboard : SpoolStack',
@@ -11,7 +12,7 @@ export const metadata: Metadata = {
 export default async function DashboardPage() {
   const { supabase, userId } = await requireUser();
 
-  const [runs, machines, materials, projects, settings, parameterDefs] = await Promise.all([
+  const [runs, machines, materials, projects, settings, parameterDefs, history] = await Promise.all([
     supabase.from('runs').select('*', { count: 'exact', head: true }),
     supabase.from('machines').select('*', { count: 'exact', head: true }).eq('is_active', true),
     supabase.from('materials').select('*', { count: 'exact', head: true }).eq('is_active', true),
@@ -22,9 +23,11 @@ export default async function DashboardPage() {
       .eq('user_id', userId)
       .maybeSingle(),
     supabase.from('parameter_defs').select('*', { count: 'exact', head: true }),
+    // Summary inputs. Bounded: past a few thousand runs this moves into a SQL view.
+    supabase.from('runs').select('outcome, duration_minutes, material_id, materials(name)').limit(5000),
   ]);
 
-  const errors = [runs, machines, materials, projects, settings, parameterDefs]
+  const errors = [runs, machines, materials, projects, settings, parameterDefs, history]
     .map((r) => r.error?.message)
     .filter((m): m is string => Boolean(m));
 
@@ -56,6 +59,19 @@ export default async function DashboardPage() {
     },
   ];
   const setupRemaining = setup.filter((s) => !s.done).length;
+
+  // Counts, not percentages: "4 of 5" says how little data there is; "80%" hides it.
+  const rows = history.data ?? [];
+  const printMinutes = rows.reduce((sum, r) => sum + (r.duration_minutes ?? 0), 0);
+  const byOutcome = (o: string) => rows.filter((r) => r.outcome === o).length;
+  const materialUse = new Map<string, { name: string; n: number }>();
+  for (const r of rows) {
+    if (!r.material_id || !r.materials) continue;
+    const cur = materialUse.get(r.material_id) ?? { name: r.materials.name, n: 0 };
+    cur.n += 1;
+    materialUse.set(r.material_id, cur);
+  }
+  const topMaterial = [...materialUse.values()].sort((a, b) => b.n - a.n)[0];
 
   return (
     <div className="space-y-10">
@@ -94,6 +110,45 @@ export default async function DashboardPage() {
           );
         })}
       </div>
+
+      {rows.length > 0 ? (
+        <section className="rounded-lg border border-black/10 p-5 text-sm dark:border-white/15">
+          <h2 className="font-semibold">So far</h2>
+          <dl className="mt-3 grid gap-x-8 gap-y-3 sm:grid-cols-3">
+            <div>
+              <dt className="text-xs uppercase tracking-wide opacity-55">Print time</dt>
+              <dd className="mt-0.5 text-lg tabular-nums">{formatDuration(printMinutes) || '0m'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase tracking-wide opacity-55">Outcomes</dt>
+              <dd className="mt-0.5">
+                <span className="text-lg tabular-nums">{byOutcome('success')}</span> of {rows.length} succeeded
+                <span className="block text-xs opacity-60">
+                  {[
+                    byOutcome('partial') ? `${byOutcome('partial')} partial` : null,
+                    byOutcome('failure') ? `${byOutcome('failure')} failed` : null,
+                    byOutcome('aborted') ? `${byOutcome('aborted')} aborted` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(', ')}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase tracking-wide opacity-55">Most used</dt>
+              <dd className="mt-0.5">
+                {topMaterial ? (
+                  <>
+                    {topMaterial.name} <span className="opacity-60">({topMaterial.n} {topMaterial.n === 1 ? 'run' : 'runs'})</span>
+                  </>
+                ) : (
+                  <span className="opacity-50">no material recorded</span>
+                )}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
 
       {setupRemaining > 0 ? (
         <section className="rounded-lg border border-black/10 p-5 dark:border-white/15">

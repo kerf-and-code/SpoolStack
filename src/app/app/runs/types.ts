@@ -54,6 +54,17 @@ export interface RecentRun {
   parameters: Json;
 }
 
+/** Prefill for editing an existing run. Built on the server from the stored row. */
+export interface RunEditInitial {
+  runId: string;
+  /** Form field values, including "p.<key>" settings, as strings. */
+  values: Record<string, string>;
+  weighed: boolean;
+  /** defect_type_id -> severity ('' when not recorded). */
+  defects: Record<number, string>;
+  completedAtIso: string | null;
+}
+
 export interface RunFormData {
   machines: MachineOption[];
   materials: MaterialOption[];

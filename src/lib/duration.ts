@@ -65,6 +65,20 @@ export function parseDurationMinutes(raw: string | null | undefined): DurationRe
   return { ok: true, minutes: Math.round(minutes * 100) / 100 };
 }
 
+/**
+ * For prefilling an edit form: keeps seconds, so opening a run and saving it
+ * unchanged does not round 266.98 minutes to 267. Parses back to the same value.
+ */
+export function formatDurationForInput(minutes: number | null | undefined): string {
+  if (minutes === null || minutes === undefined) return '';
+  const totalSec = Math.round(minutes * 60);
+  if (totalSec % 60 === 0) return formatDuration(minutes);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return [h ? `${h}h` : '', m ? `${m}m` : '', `${s}s`].filter(Boolean).join(' ');
+}
+
 /** 134 -> "2h 14m". 45 -> "45m". 0.5 -> "30s". */
 export function formatDuration(minutes: number | null | undefined): string {
   if (minutes === null || minutes === undefined) return '';

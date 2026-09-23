@@ -21,16 +21,26 @@
 
 import Link from 'next/link';
 import { startTransition, useActionState, useMemo, useState, useSyncExternalStore } from 'react';
-import { formatDuration } from '@/lib/duration';
+import { LocalTime } from '@/components/local-time';
+import { formatDuration, parseDurationMinutes } from '@/lib/duration';
 import { readSlicedFile, titleFromFileName } from '@/lib/gcode-file';
 import { parseGcode, validateParameters, type ParameterDef } from '@/lib/gcodeParse';
-import { idleState } from '@/lib/forms';
+import { idleState, type FormState } from '@/lib/forms';
 import { matchMachines, matchMaterial } from '@/lib/import-match';
 import { PARAM_PREFIX, parametersToFields, type ParamDefRow } from '@/lib/run-params';
 import { createMachineFromImport } from '../machines/actions';
 import { saveRun } from './actions';
 import { ImportPanel, type ImportSummary, type MachineStatus, type MaterialStatus } from './import-panel';
-import { OUTCOMES, type MachineOption, type Outcome, type RecentRun, type RunFormData } from './types';
+import {
+  OUTCOMES,
+  type MachineOption,
+  type Outcome,
+  type RecentRun,
+  type RunEditInitial,
+  type RunFormData,
+} from './types';
+
+type RunAction = (prev: FormState, formData: FormData) => Promise<FormState>;
 
 const OUTCOME_STYLE: Record<Outcome, { label: string; on: string }> = {
   success: { label: 'Success', on: 'border-emerald-600 bg-emerald-600 text-white' },
@@ -61,9 +71,20 @@ function bestMatch(runs: RecentRun[], machineId: string, materialId: string): Re
   );
 }
 
-export function RunForm({ data }: { data: RunFormData }) {
+export function RunForm({
+  data,
+  action = saveRun,
+  initial,
+}: {
+  data: RunFormData;
+  /** Server action: saveRun for a new run, updateRun bound to an id for an edit. */
+  action?: RunAction;
+  /** Present when editing an existing run. */
+  initial?: RunEditInitial;
+}) {
   const { machines, materials, projects, parameterDefs, defectTypes, recentRuns } = data;
-  const [state, dispatch, pending] = useActionState(saveRun, idleState);
+  const editing = initial !== undefined;
+  const [state, dispatch, pending] = useActionState(action, idleState);
   const errors = state.status === 'error' ? state.fieldErrors : {};
 
   const last = recentRuns[0] ?? null;
@@ -81,12 +102,16 @@ export function RunForm({ data }: { data: RunFormData }) {
     active_labor_minutes: '',
     quality_rating: '',
     notes: '',
+    ...(initial?.values ?? {}),
   }));
-  const [weighed, setWeighed] = useState(false);
-  const [defects, setDefects] = useState<Record<number, string>>({});
+  const [weighed, setWeighed] = useState(initial?.weighed ?? false);
+  const [defects, setDefects] = useState<Record<number, string>>(initial?.defects ?? {});
   const [showSettings, setShowSettings] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [showDefectsOnSuccess, setShowDefectsOnSuccess] = useState(false);
+  // An edited success that already has defects must show them, or they could not be unticked.
+  const [showDefectsOnSuccess, setShowDefectsOnSuccess] = useState(
+    Object.keys(initial?.defects ?? {}).length > 0,
+  );
   const [copiedFrom, setCopiedFrom] = useState<RecentRun | null>(null);
 
   // A machine can be added mid-form from a gcode import, so the list is state.
@@ -337,21 +362,25 @@ export function RunForm({ data }: { data: RunFormData }) {
   return (
     <form onSubmit={onSubmit} noValidate className="pb-28">
       <input type="hidden" name="domain_id" value={domainId} />
-      <input type="hidden" name="source" value={imported ? 'gcode_import' : 'manual'} />
-      {imported ? <input type="hidden" name="source_metadata" value={imported.metadataJson} /> : null}
+      {editing ? null : (
+        <>
+          <input type="hidden" name="source" value={imported ? 'gcode_import' : 'manual'} />
+          {imported ? <input type="hidden" name="source_metadata" value={imported.metadataJson} /> : null}
 
-      {/* ------------------------------------------------- import from file */}
-      <ImportPanel
-        importing={importing}
-        error={importError}
-        summary={imported}
-        addingMachine={addingMachine}
-        onFile={importFile}
-        onAddMachine={addMachineFromFile}
-      />
+          {/* --------------------------------------------- import from file */}
+          <ImportPanel
+            importing={importing}
+            error={importError}
+            summary={imported}
+            addingMachine={addingMachine}
+            onFile={importFile}
+            onAddMachine={addMachineFromFile}
+          />
+        </>
+      )}
 
       {/* ------------------------------------------------ copy from last run */}
-      {candidate ? (
+      {candidate && !editing ? (
         <div className="mb-8 flex flex-wrap items-center gap-3 rounded-lg border border-black/10 bg-black/[0.03] p-3 dark:border-white/15 dark:bg-white/5">
           <button
             type="button"
@@ -458,7 +487,7 @@ export function RunForm({ data }: { data: RunFormData }) {
         </fieldset>
 
         <div className="grid gap-5 sm:grid-cols-2">
-          <Field label="Duration" name="duration" error={errors.duration} help="2h 14m, 2:14, 1.5h, or minutes.">
+          <Field label="Duration" name="duration" error={errors.duration} help="2h 14m, 2:14, 1.5h. A bare number is minutes.">
             <input
               id="duration"
               name="duration"
@@ -471,6 +500,7 @@ export function RunForm({ data }: { data: RunFormData }) {
               className={inputClass}
               aria-invalid={errors.duration ? true : undefined}
             />
+            <DurationReadback raw={values.duration} />
           </Field>
 
           <Field label="Material used" name="material_qty_used" error={errors.material_qty_used}>
@@ -640,7 +670,12 @@ export function RunForm({ data }: { data: RunFormData }) {
           </span>
         </button>
         <div className={detailsOpen ? 'mt-6 grid gap-5 sm:grid-cols-2' : 'hidden'}>
-          <Field label="Finished at" name="completed_at" error={errors.completed_at} help="Blank means now.">
+          <Field
+            label="Finished at"
+            name="completed_at"
+            error={errors.completed_at}
+            help={editing ? undefined : 'Blank means now.'}
+          >
             <input
               id="completed_at"
               type="datetime-local"
@@ -648,6 +683,11 @@ export function RunForm({ data }: { data: RunFormData }) {
               onChange={(e) => set('completed_at', e.target.value)}
               className={inputClass}
             />
+            {editing && initial.completedAtIso ? (
+              <p className="mt-1 text-xs opacity-60">
+                Currently <LocalTime iso={initial.completedAtIso} />. Leave blank to keep it.
+              </p>
+            ) : null}
           </Field>
           <Field
             label="Hands-on time"
@@ -707,9 +747,9 @@ export function RunForm({ data }: { data: RunFormData }) {
             disabled={pending}
             className="rounded-lg bg-foreground px-6 py-3 text-sm font-semibold text-background disabled:opacity-50"
           >
-            {pending ? 'Saving...' : 'Save run'}
+            {pending ? 'Saving...' : editing ? 'Save changes' : 'Save run'}
           </button>
-          <Link href="/app/runs" className="text-sm opacity-70 hover:opacity-100">
+          <Link href={editing ? `/app/runs/${initial.runId}` : '/app/runs'} className="text-sm opacity-70 hover:opacity-100">
             Cancel
           </Link>
           {state.status === 'error' ? (
@@ -893,5 +933,28 @@ function DefectPicker({
       </div>
       {error ? <ErrorText>{error}</ErrorText> : null}
     </div>
+  );
+}
+
+/**
+ * Says what the duration field will be saved as, while typing. A bare number
+ * is minutes, so "3853" typed for 38m 53s would otherwise save as 64 hours
+ * without a hint. Anything over 12 hours is called out.
+ */
+function DurationReadback({ raw }: { raw: string }) {
+  if (raw.trim() === '') return null;
+  const r = parseDurationMinutes(raw);
+  if (!r.ok || r.minutes === null) {
+    return <p className="mt-1 text-xs opacity-60">Not a duration yet. Try 2h 14m, 2:14, or 134.</p>;
+  }
+  const long = r.minutes > 12 * 60;
+  return (
+    <p
+      aria-live="polite"
+      className={'mt-1 text-xs ' + (long ? 'font-medium text-amber-700 dark:text-amber-400' : 'opacity-70')}
+    >
+      Saves as {formatDuration(r.minutes)}
+      {long ? '. That is over 12 hours; check the number.' : ''}
+    </p>
   );
 }

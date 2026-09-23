@@ -279,12 +279,12 @@ export function parseGcode(text: string): ParsedRun {
       /^;\s*total filament weight\s*\[g\]\s*[=:]\s*([\d.,\s]+)$/im,
     ]),
   );
-  // Deliberately NOT reading Bambu's "total filament volume [cm^3]" line. Its
-  // value may be mm3 despite the label (not yet checked against a real file),
-  // and a 1000x error in the volume path would be worse than no value.
-  // The two Bambu header patterns above are also UNVERIFIED against a real
-  // Bambu Studio export. They are additive fallbacks, and the M3 exit test
-  // (import a real file) is what confirms them.
+  // Deliberately NOT reading Bambu's "total filament volume [cm^3]" line.
+  // CONFIRMED against a real Bambu Studio 2.8 export: the value is mm3 despite
+  // the label (135.88 g at 1.26 g/cm3 is 107.8 cm3; the file says 107841.61).
+  // Reading it would be a 1000x error. The "total filament weight [g]" and
+  // "total filament length [mm]" header patterns are confirmed by the same
+  // file, which has no "filament used [g]" line at all.
   const cm3Stated = sumList(
     firstOf(text, [/^;\s*(?:total )?filament used\s*\[cm3\]\s*=\s*([\d.,\s]+)$/im]),
   );
@@ -329,10 +329,13 @@ export function parseGcode(text: string): ParsedRun {
   ]);
   note('printer_model', printerModel);
 
-  const filamentBrand = firstOf(text, [
-    setting('filament_vendor'),
-    setting('filament_settings_id'),
-  ])?.split(';')[0]?.trim() ?? null;
+  // Bambu quotes these ("Bambu Lab") and joins per-filament values with ';'.
+  const filamentBrand =
+    firstOf(text, [setting('filament_vendor'), setting('filament_settings_id')])
+      ?.split(';')[0]
+      ?.trim()
+      .replace(/^"(.*)"$/, '$1')
+      .trim() || null;
   note('filament_brand', filamentBrand);
 
   // ---- parameters --------------------------------------------------------
@@ -367,9 +370,28 @@ export function parseGcode(text: string): ParsedRun {
       ]),
     ),
   );
+  // Bambu and Orca write a temperature for EVERY plate type the printer
+  // supports, then name the plate actually used in curr_bed_type. Taking the
+  // first plate key found is right only by luck, so read the named one first.
+  // Checked against a real Bambu Studio 2.8 export (A1, High Temp Plate).
+  const bedType = firstOf(text, [setting('curr_bed_type')])?.replace(/"/g, '').toLowerCase() ?? '';
+  const plateKey = bedType.includes('supertack')
+    ? 'supertack_plate_temp'
+    : bedType.includes('textured')
+      ? 'textured_plate_temp'
+      : bedType.includes('engineering')
+        ? 'eng_plate_temp'
+        : bedType.includes('high temp')
+          ? 'hot_plate_temp'
+          : bedType.includes('cool')
+            ? 'cool_plate_temp'
+            : null;
+  if (bedType) note('bed_type', bedType);
+
   const bedFromComment = firstNum(
     firstOf(text, [
       setting('bed_temperature'),
+      ...(plateKey ? [setting(plateKey)] : []),
       setting('first_layer_bed_temperature'),
       setting('hot_plate_temp'),
       setting('textured_plate_temp'),
