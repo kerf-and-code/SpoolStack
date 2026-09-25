@@ -3,7 +3,7 @@
 **From spec to shipped Phase 1.**
 Kerf and Code LLC. Written 2026-09-20. Supersedes the Phase 0 feasibility doc of 2026-08-01.
 
-> **Status, 2026-09-23:** M0 to M4 complete on the live app, and M5's code is live. What is left of Phase 1 is manual (domain, search console, phone install check) and the two-week dogfood. Current state and the log of what changed are in section 8.
+> **Status, 2026-09-23:** M0 to M5 complete. The app is live at `spool-stack.com` with Google and email sign-in, it installs to a phone, and a full public site with a free print cost calculator is built. What is left of Phase 1 is Search Console and Bing verification and the two-week dogfood. Current state and the log of what changed are in section 8.
 
 ---
 
@@ -336,7 +336,7 @@ Two of the five are now answered.
 | 5. Marketing page | **Done.** Rewritten so every claim is true of the shipped app; costing and later phases are listed under "Coming next", not sold as built. Plus `/privacy`. |
 | 6. SEO | **Done in code:** `metadataBase`, Open Graph and Twitter cards with a 1200x630 image, canonical links, `robots.txt` (disallows `/app` and `/auth`), `sitemap.xml`, JSON-LD `SoftwareApplication` with a free offer and no ratings. **Manual, after the domain:** Google Search Console and Bing verification. |
 | 7. Presets | **Done,** as code constants. See item 7 above. |
-| 8. Domain | Manual checklist in item 8. No code change remains. |
+| 8. Domain | **Done.** `spool-stack.com` is the production domain and `www` redirects to it. Google OAuth is set up (redirect URI is the Supabase callback). |
 
 Also in M5: security headers from the Next 16 PWA guide (nosniff, frame DENY, strict referrer; no-cache and a CSP on `sw.js`), the proxy no longer runs on the service worker, manifest, offline page, robots or sitemap, and the import matcher now prefers exact printer matches, so owning both an A1 and an A1 mini still auto-selects the right one.
 
@@ -362,9 +362,23 @@ Also in M5: security headers from the Next 16 PWA guide (nosniff, frame DENY, st
 - **`robocopy` into a git repo must exclude `.git`** (`/XD .git`). Without it the repo's config and HEAD get overwritten.
 - **npm package names cannot start with `_`,** which also applies to `create-next-app` folder names.
 
+### Public site and free tools (2026-09-23)
+
+Asked for after M5: a marketing site "similar to the other sites", with features, free tools and supporting pages. Decisions:
+
+- **Look:** a workshop register built from the icon. Paper, ink and the orange top layer, graph paper behind the content, buttons and panels with a hard offset shadow like a printed layer, and section labels written as gcode comments (`; features`). Follows the colour scheme. Scoped to public pages through `SiteShell`, so the app's own look is untouched.
+- **Pages:** home (redesigned), `/features` (tabbed feature explorer), `/tools` hub, `/tools/print-cost-calculator`, `/faq`, `/about`, `/contact` with a form, and `/privacy` and the 404 page moved onto the same shell. No pricing page.
+- **Free, no paid plan.** SpoolStack costs almost nothing to run because it does no per-use AI. The FAQ says a per-use feature such as photo defect diagnosis might be paid one day, and that logging will not be. Terry is still deciding on "completely free", so that FAQ answer is the line to revisit.
+- **Illustrations are HTML, not screenshots.** The feature and home panels are drawn in code from real field names and a real run (the 4h 27m A1 print), so they stay sharp and never go stale.
+- **Costing library first.** `src/lib/costing.ts` is the TypeScript twin of `run_cost_breakdown`, checked against 14 rows read from the real view on Postgres. The public calculator uses it now, and Phase 2's app screens will use it too.
+- **Contact form** emails through Resend from `contact@send.kerfandcode.com`, the domain already verified for Six Axes. It needs `RESEND_API_KEY` in the Vercel project; until then it answers 503 and shows the email address instead.
+- **Only one free tool for now,** the cost calculator. Quote pricing, filament converters and printer spec pages were considered and left for later.
+- **Logo (2026-09-23):** replaced the layered-print icon with a single S made of two empty spools stacked face-on, each ring cut open on opposite sides. Top spool cream, bottom spool orange, on the ink tile. Chosen partly to keep the name from ever being shortened to a double-S monogram. The spool hubs show at 40px and up; the favicon and small header marks use the plain S, because the hubs blur at that size. Source geometry: `LogoMark` in `src/components/site/logo-mark.tsx`, on the same 512 grid as the PNG icons. Worth a quick trademark and image search before it goes on anything printed.
+
 ### Next actions
 
-1. ~~Commit M4 and M5, M4 exit test.~~ Done 2026-09-23.
-2. **Install check on a phone:** open the live site, Add to Home Screen, confirm it opens to `/app` with the new icon.
-3. **Connect `spool-stack.com`** (M5 item 8), then Search Console and Bing verification.
-4. **The two-week dogfood** that closes Phase 1. Empty states (M5 item 3) are done. Stopwatch targets from M2 still to record: under 60 seconds fresh, under 20 seconds repeat.
+1. ~~Commit M4 and M5, M4 exit test, phone install, connect `spool-stack.com`.~~ Done 2026-09-23.
+2. **Add `RESEND_API_KEY`** to the SpoolStack Vercel project so the contact form sends.
+3. **Search Console and Bing verification,** then submit `https://spool-stack.com/sitemap.xml`.
+4. **The two-week dogfood** that closes Phase 1. Stopwatch targets from M2 still to record: under 60 seconds fresh, under 20 seconds repeat.
+5. **Phase 2 costing in the app,** built on `src/lib/costing.ts`.

@@ -11,7 +11,9 @@
     "test:gcode": "node --experimental-strip-types src/lib/gcodeParse.test.ts",
     "test:run-form": "node --experimental-strip-types src/lib/run-form.test.ts",
     "test:import": "node --experimental-strip-types src/lib/gcode-import.test.ts",
-    "test:presets": "node --experimental-strip-types src/lib/presets.test.ts"
+    "test:presets": "node --experimental-strip-types src/lib/presets.test.ts",
+    "test:costing": "node --experimental-strip-types src/lib/costing.test.ts && node --experimental-strip-types src/lib/cost-calculator.test.ts",
+    "test:contact": "node --experimental-strip-types src/lib/contact.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

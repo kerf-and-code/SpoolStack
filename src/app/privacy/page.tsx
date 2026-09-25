@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { SiteShell } from '@/components/site/site-shell';
+import { PageIntro } from '@/components/site/ui';
 import { CONTACT_EMAIL, SITE_NAME } from '@/lib/site';
 
 export const metadata: Metadata = {
@@ -8,27 +10,20 @@ export const metadata: Metadata = {
   alternates: { canonical: '/privacy' },
 };
 
-// Written to match what the code actually does as of M5. If a feature changes
+// Written to match what the code actually does. If a feature changes
 // what is collected (photos, analytics, error reporting, payments), this page
 // changes in the same commit.
 const UPDATED = 'September 23, 2026';
 
 export default function PrivacyPage() {
   return (
-    <div className="flex flex-1 flex-col">
-      <header className="border-b border-black/10 dark:border-white/15">
-        <div className="mx-auto flex max-w-3xl items-center px-6 py-4">
-          <Link href="/" className="font-semibold tracking-tight">
-            {SITE_NAME}
-          </Link>
-        </div>
-      </header>
+    <SiteShell>
+      <div className="mx-auto w-full max-w-3xl px-4 pb-24 sm:px-6">
+        <PageIntro eyebrow="privacy" title="Privacy">
+          <p className="font-mono text-sm">Last updated {UPDATED}</p>
+        </PageIntro>
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-        <h1 className="text-3xl font-semibold tracking-tight">Privacy</h1>
-        <p className="mt-2 text-sm opacity-60">Last updated {UPDATED}</p>
-
-        <div className="mt-10 space-y-10 text-sm leading-relaxed [&_h2]:mb-3 [&_h2]:text-base [&_h2]:font-semibold [&_li]:mt-1.5 [&_p]:mt-3 [&_p]:opacity-80 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:opacity-80">
+        <div className="space-y-10 rounded-xl border border-line bg-panel p-6 text-sm leading-relaxed sm:p-8 [&_h2]:mb-3 [&_h2]:text-base [&_h2]:font-semibold [&_li]:mt-1.5 [&_p]:mt-3 [&_p]:text-muted [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:text-muted">
           <section>
             <h2>The short version</h2>
             <p>
@@ -53,6 +48,26 @@ export default function PrivacyPage() {
               <li>Payment details. {SITE_NAME} does not take payments.</li>
               <li>Tracking data. There are no analytics, advertising or social media scripts on this site.</li>
             </ul>
+          </section>
+
+          <section>
+            <h2>If you contact us</h2>
+            <p>
+              Messages sent through the{' '}
+              <Link href="/contact" className="underline underline-offset-2">
+                contact form
+              </Link>{' '}
+              are emailed to us through Resend, an email delivery service, with the name and email address you
+              enter so we can reply. They are not added to any mailing list.
+            </p>
+          </section>
+
+          <section>
+            <h2>Free tools</h2>
+            <p>
+              The calculators under Free tools run in your browser and save nothing. The numbers you enter are kept
+              in the page address, so a link you share includes them.
+            </p>
           </section>
 
           <section>
@@ -103,15 +118,7 @@ export default function PrivacyPage() {
             </p>
           </section>
         </div>
-      </main>
-
-      <footer className="border-t border-black/10 dark:border-white/15">
-        <div className="mx-auto max-w-3xl px-6 py-6 text-sm opacity-60">
-          <Link href="/" className="hover:opacity-100">
-            Back to {SITE_NAME}
-          </Link>
-        </div>
-      </footer>
-    </div>
+      </div>
+    </SiteShell>
   );
 }
