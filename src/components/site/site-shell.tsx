@@ -38,9 +38,9 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
 
       <header className="sticky top-0 z-30 border-b border-line bg-paper/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3 sm:px-6">
-          <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
+          <Link href="/" aria-label="SpoolStack home" className="flex items-center gap-2.5 font-semibold tracking-tight">
             <LogoMark size={32} className="rounded-[22%] dark:ring-1 dark:ring-line" />
-            <span>SpoolStack</span>
+            <span className="tracking-[-0.03em]">spoolstack</span>
           </Link>
           <SiteNav />
         </div>
@@ -55,7 +55,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
           <div>
             <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
               <LogoMark size={28} className="rounded-[22%] dark:ring-1 dark:ring-line" />
-              <span>SpoolStack</span>
+              <span className="tracking-[-0.03em]">spoolstack</span>
             </Link>
             <p className="mt-3 max-w-xs text-sm text-muted">
               A run log for people who make things. Free to use, made by Kerf and Code LLC.

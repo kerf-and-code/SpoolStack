@@ -11,9 +11,9 @@
 //   * client-side navigations, which Next does with fetch(), not navigations
 //   * every asset, API call and Supabase request
 //
-// Bump VERSION whenever offline.html changes.
+// Bump VERSION whenever offline.html or the icon it shows changes.
 
-const VERSION = 'v1';
+const VERSION = 'v3';
 const CACHE = `spoolstack-offline-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
 
