@@ -3,7 +3,7 @@
 **From spec to shipped Phase 1.**
 Kerf and Code LLC. Written 2026-09-20. Supersedes the Phase 0 feasibility doc of 2026-08-01.
 
-> **Status, 2026-09-23:** M0 to M5 complete. The app is live at `spool-stack.com` with Google and email sign-in, it installs to a phone, and a full public site with a free print cost calculator is built. What is left of Phase 1 is Search Console and Bing verification and the two-week dogfood. Current state and the log of what changed are in section 8.
+> **Status, 2026-09-23:** M0 to M5 complete. The app is live at `spool-stack.com` with Google and email sign-in, it installs to a phone, and a full public site with a free print cost calculator is built. What is left of Phase 1 is Search Console and Bing verification and the two-week dogfood. Current state and the log of what changed are in section 8, followed by the roadmap past Phase 1: capture without typing, filament inventory and a stats dashboard first, then fix suggestions and on-device photo diagnosis. Everything is planned to be free.
 
 ---
 
@@ -197,14 +197,14 @@ The point of the spine is that later phases are queries. Here is the check, run 
 |---|---|---|
 | 2 The Ledger | `select * from run_cost_breakdown` plus a failure-rate rollup and a batch-size curve | none |
 | 3 The Oracle | `select parameters from runs where material_id=? and machine_id=? and outcome='success' order by created_at desc`, growing into a model over the `is_calibration_relevant` keys | one, for saved calibration profiles |
-| 4 The Diagnostician | image in, `run_defects` rows out, `defect_types.likely_causes` as the grounding taxonomy | none for the write path |
+| 4 The Diagnostician | image in, `run_defects` rows out, `defect_types.likely_causes` as the grounding taxonomy. Now an on-device model, roadmap Stage 5 | none for the write path |
 | 5 The Expansion | `insert into domains`, `insert into parameter_defs`, `insert into defect_types` | none |
 
 All four proof queries from the spec were run against the built schema and returned correct results (section 6). That is the test of a good spine.
 
 **Phase 2 is where your actual differentiator shows up.** A filament tracker can total up material cost. What it cannot do is amortise the real failure rate into marginal cost with an interval around it, and say honestly that with 11 logged runs the interval is too wide to decide on. That is the same small-sample-inference spine as Verdict, Ledger and Kiln. The shared stats library you planned across those repos should be pulled in here rather than re-derived, and SpoolStack is arguably the best dogfood for it because the cost inputs are physical and checkable.
 
-**Monetization stays off the critical path.** Freemium at around $4/month, free tier is logging plus the journal, paid is the analytics layer. Stripe on web only, wired in Phase 2 when there is something worth paying for. Play Billing 8 and the TWA come after that, using the documented Litmus workflow: edit `app/build.gradle` directly, `gradlew bundleRelease`, `jarsigner`, never `bubblewrap build` on Node 24.
+**Monetization: free.** Superseded on 2026-09-25 (see the roadmap in section 8): everything is free except a feature that calls a paid third-party service per use, and the roadmap has none, because photo diagnosis runs on the device. The earlier plan, freemium at around $4 a month with Stripe on web, is shelved rather than deleted in case that ever changes. If the TWA and Play listing happen later, use the documented Litmus workflow: edit `app/build.gradle` directly, `gradlew bundleRelease`, `jarsigner`, never `bubblewrap build` on Node 24.
 
 ---
 
@@ -221,7 +221,10 @@ Ordered by how much damage each one does, not how likely it is.
 | 5 | **Scope creep into Phase 3.** Recommendations are the fun part and they are worthless at zero data. | Weeks lost | The spec's explicit out-of-scope list is binding: no cost UI, no recommendations, no photo AI, no live printer APIs, no CNC. |
 | 6 | **Slicer format drift.** A slicer release changes a comment key and imports silently degrade. | Slow leak | `source_metadata` keeps the raw matches for re-parsing. The test file is the regression net: add a fixture whenever a new slicer or version appears. |
 | 7 | **Parallel-project time.** Six Axes, Litmus, Verdict, Ledger and Kiln all exist. | Schedule | The milestone exit criteria are binary, so a half-finished milestone is visible rather than comfortable. M5's two-week dogfood is the honest gate. |
-| 8 | **Nobody wants it.** Filament trackers exist and are free. | Existential, later | Phase 2 is the answer, not Phase 1: the cost and failure-rate modelling is the part a filament-tracker developer does not build. Test it on your own Kerf and Code product decisions first, which is free market research. |
+| 8 | **Nobody wants it.** Filament trackers exist and are free, and 3D Print Log already fills runs from the slicer and the printer. | Existential, later | Match them on capture first (roadmap Stage 1), then win on what they do not do: cost per good part from logged failures, and fixes checked against whether the next print worked. Test it on your own Kerf and Code product decisions first, which is free market research. |
+| 9 | **Bambu closes the door further.** Third-party LAN access already needs Developer Mode. | Reach | The slicer uploader works whatever the printer firmware does; connectors are extras, never the only path. |
+| 10 | **The on-device model is not accurate enough.** Phone photos vary in light and angle. | Stage 5 slips | Measure on held-back photos before launch, launch only the defects that pass, and show accuracy per defect. Stage 4 rules work without the model. |
+| 11 | **Free forever meets storage.** Photos are the one cost that grows with users. | Cost | Photos are shrunk on the device (about 0.5 MB each). Watch bucket size monthly; the paid Supabase tier is the planned step, not a surprise. |
 
 ---
 
@@ -308,7 +311,7 @@ Two of the five are now answered.
 2. ~~**Product name.**~~ Settled: SpoolStack. The domain `spool-stack.com` was bought on 2026-09-23, so the earlier reservation (a spool-specific name for a multi-process product) is withdrawn.
 3. ~~**Domain.**~~ Settled: `spool-stack.com`. One domain for both the marketing page (`/`) and the app (`/app`), no split like Litmus needed. Connects in M5, item 8.
 4. **Auth providers.** Google OAuth alone, or Google plus email magic link? Magic link costs nothing and covers people without a Google account.
-5. **Offline logging.** Printers live in garages and basements with bad wifi. A "save when back online" queue is genuinely useful here and genuinely annoying to retrofit. My recommendation is to keep it out of Phase 1 but make every write go through a single `saveRun()` function so the queue has one place to live later.
+5. **Offline logging.** Printers live in garages and basements with bad wifi. A "save when back online" queue is genuinely useful here and genuinely annoying to retrofit. My recommendation is to keep it out of Phase 1 but make every write go through a single `saveRun()` function so the queue has one place to live later. Now scheduled in roadmap Stage 1, item 5.
 
 ---
 
@@ -375,25 +378,117 @@ Asked for after M5: a marketing site "similar to the other sites", with features
 - **Only one free tool for now,** the cost calculator. Quote pricing, filament converters and printer spec pages were considered and left for later.
 - **Logo (2026-09-24):** a single S made of two empty spools of the same size, stacked face-on and touching exactly at the centre, each ring cut open on opposite sides. Top spool cream (ink on light backgrounds), bottom spool orange, on the ink tile. Chosen partly so the name is never shortened to a double-S monogram, and the wordmark is set lowercase, `spoolstack`, so no two capital S's sit together. Explored along the way: unequal and offset spools, flange and disc depth treatments, and second accent colours; the plain, aligned version won. The spool hubs show at 40px and up; the favicon and small header marks use the plain S, because the hubs blur at that size. Source geometry: `LogoMark` in `src/components/site/logo-mark.tsx`, on the same 512 grid as the PNG icons. Worth a quick trademark and image search before it goes on anything printed.
 
-### The end state and the road to it (agreed 2026-09-25)
+### The roadmap to the end state (agreed 2026-09-25; capture, inventory and stats added the same day)
 
-The end state: photograph a finished print. A success is logged with its settings from the gcode; a failure is diagnosed against those settings, and SpoolStack suggests the calibration change most likely to make the next print work. It is one loop (photograph, diagnose, adjust, reprint, check whether the change worked), which merges the spec's Phase 3 (calibration) and Phase 4 (photo diagnosis). Costing is useful but off this critical path.
+The end state: photograph a finished print. A success is logged with its settings from the gcode; a failure is diagnosed against those settings, and SpoolStack suggests the calibration change most likely to make the next print work. It is one loop (photograph, diagnose, adjust, reprint, check whether the change worked), which merges the spec's Phase 3 (calibration) and Phase 4 (photo diagnosis).
 
-Ground rules: diagnosis ("that is stringing") and recommendation ("drop 5 C") are built and tested separately; nothing promises a successful print, only the most likely fix with its evidence; a retry has to be linked to the run it retries, or the loop cannot learn whether a fix worked.
+**Two rules sit above every stage.**
 
-- **Stage 0, collect (now):** photos on runs with a shot type and a defect label per photo (**built 2026-09-25**), then a "retry of" link recording what changed, then storing the full slicer config rather than the 21 mapped settings. No AI. Its value is the dataset, which only grows with time.
-- **Stage 1, fix suggestions without AI:** defect plus the run's actual settings, through a curated rule set seeded from `defect_types.likely_causes`, gives ranked one-change-at-a-time suggestions.
-- **Stage 2, photo diagnosis:** a general vision model, given the defect list and the run's settings, proposes defects with confidence; the user confirms or corrects, which labels the data. Accuracy is measured on the Stage 0 photos before launch. Per-scan cost makes this the one feature that may be paid.
-- **Stage 3, calibration from your own results:** Bayesian success rates per printer and filament, with Stage 1 rules as priors, and calibration prints read from photos.
-- **Stage 4:** pooled, opt-in learning across users; a model of our own trained on confirmed labels; locating a defect's height against the gcode layer.
+1. **Low friction and automation come first.** Every feature reads the log, so a log that fills itself is the product. The target: logging a print means confirming it, not typing it. The slicer or the printer creates the run, and you add the outcome and a photo with one tap each. Any stage that adds typing to the log has to earn it.
+2. **Free, except anything that costs per use.** Everything that runs on the user's device or on SpoolStack's own servers is free. That includes printer connections, which are local, and photo diagnosis, which runs on the phone (Stage 5). A feature is paid only if it calls a paid third-party service every time it is used, and nothing in this plan does. What Kerf and Code carries is hosting, photo storage (the first thing to outgrow the free Supabase tier) and the compute to retrain the photo model, which is per release, not per user.
 
-**Stage 0 photos, as built:** a private Storage bucket `run-photos` and a `run_photos` table (`db/run_photos.sql`, also folded into `db/schema.sql` as section 9). Files sit at `<user>/<run>/<photo>.jpg`; Storage policies allow only your own folder and your own runs, and the table's RLS re-checks the parent run because foreign-key checks bypass RLS. Photos are shrunk to 2048px on the device and re-encoded, which also strips EXIF location. Each photo has a kind (whole print, close-up, first layer, where it failed, other) and at most one defect label, one tap each. Saving a new run now opens that run's page so photos can be added straight away. Deleting a run or a photo removes the files as well as the rows. `runs.photos` and `run_defects.photo_path` are superseded but left in place.
+Ground rules carried over: diagnosis ("that is stringing") and recommendation ("drop 5 C") are built and tested separately; nothing promises a successful print, only the most likely fix with its evidence; a retry is linked to the run it retries, or the loop cannot learn whether a fix worked.
+
+#### Stage 0, collect (now)
+
+- **Photos on runs,** with a shot type and a defect label per photo. **Built 2026-09-25.**
+- **"Retry of" link** on a run, recording what changed from the run it retries.
+- **Full slicer config,** the raw settings block, stored alongside the 21 mapped settings, so later stages can learn from settings nobody has mapped yet.
+- **Contribute opt-in,** off by default: "Use my photos, labels and run settings to improve diagnosis for everyone." The privacy page says photos are private to the account, so no photo is used for training without this switch, and switching it off removes that account's data from the next training set. The privacy page gets a paragraph saying exactly this. Needed before any public post that mentions the dataset.
+
+#### Stage 1, capture without typing
+
+The biggest gap against 3D Print Log, which already fills runs from the slicer and from OctoPrint and Klipper. In order of reach:
+
+1. **Slicer uploader.** A post-processing script for PrusaSlicer, OrcaSlicer and Bambu Studio, all of which run one after slicing with the gcode path as its argument. It sends the first and last 64 KB of the file (where every slicer writes its settings, thumbnails stripped) to `/api/ingest` with a personal upload token. The server parses it with the same `gcodeParse.ts` the app uses, so there is one parser and no drift. The result is a **pending run**: sliced, not yet printed. To test: Bambu Studio runs the script at slice time, so confirm it still fires when sending straight to the printer.
+2. **The "Did it print?" inbox.** Pending runs sit at the top of the dashboard. One tap for the outcome (worked, failed, didn't print), one for a photo, done. Pending runs older than a week fold away instead of nagging. This is where the 60-second form becomes a 5-second confirm.
+3. **Printer connectors, local and opt-in.**
+   - **Klipper (Moonraker):** job history gives start, end, real duration, filament used and how the job ended (complete, cancelled, error). The ending prefills the outcome, and a webcam snapshot at the end of the print becomes the run's first photo automatically, from the same angle every time, which is the best training data there is.
+   - **OctoPrint:** a plugin doing the same from print events.
+   - **Bambu:** since the 2025 authorization firmware, full third-party LAN access needs Developer Mode, which cuts the printer off from Bambu Cloud. Bambu owners get the slicer uploader first, and a connector only for Developer Mode users.
+   - A finished job is matched to its pending run by file name and time. With no match, it becomes a new run.
+4. **Phone paths.** On Android, a share target, so a gcode, 3MF or photo can be shared straight into SpoolStack from any app. iOS does not support share targets for web apps, so iPhone users rely on the uploader, the connectors, and the existing file picker and camera.
+5. **Offline queue** (open question 5), because the inbox gets used standing at a printer in a garage.
+
+**Exit criteria.** Over a week of your own printing, at least 80 percent of runs arrive without typing, and the median time in the app per run is under 10 seconds.
+
+#### Stage 2, filament inventory
+
+Standard in every competitor, and it feeds both costing and failure prevention.
+
+- **Spools,** a new table: material, colour, net grams when new, empty-spool weight, remaining grams, state (sealed, open, empty), location, opened date. A run records which spool it used.
+- **Automatic deduction** of the run's grams from its spool on save. A failed run still deducts, because the plastic is gone.
+- **Weigh-in correction:** type the scale reading and the empty-spool weight comes off. The gap between estimate and scale is recorded, which measures how far off slicer estimates are, per material.
+- **"Enough for this print?"** A pending run from the uploader already knows its grams, so SpoolStack can warn before the print starts that the loaded spool has 90 g left and the print needs 135 g. A runout failure becomes a spool change.
+- **QR labels:** print a label per spool; scanning it with the phone sets the loaded spool on a machine. One scan instead of a picker.
+- **Multi-material:** the `run_materials` child table deferred in section 1 becomes due here, because AMS prints draw from up to four spools.
+- **Spoolman import,** one-off from its export, so people already tracking spools do not start over.
+
+#### Stage 3, stats dashboard and honest costing
+
+This absorbs the spec's Phase 2 (The Ledger), and it is where the statistics background shows.
+
+- Success rate over time, and by printer, material and project, **each with its run count and an interval.** Below a minimum count the chart says "not enough runs yet" instead of showing a rate.
+- Defects by frequency (a Pareto chart), print hours and grams per month, spool burn rate and a runout forecast.
+- **Cost per good part,** using the failure rate from the same history, built on `src/lib/costing.ts`.
+- **Retries:** what changed and whether it worked, the first visible output of the Stage 0 retry link.
+
+#### Stage 4, fix suggestions without AI
+
+Defect plus the run's actual settings, through a curated rule set seeded from `defect_types.likely_causes`, gives ranked one-change-at-a-time suggestions with the reason shown. Every suggestion followed by a retry is scored on whether the retry worked, so the rules earn or lose trust from real outcomes.
+
+#### Stage 5, photo diagnosis on the device, no AI service
+
+A small image model of SpoolStack's own, trained on confirmed labels and run in the browser with ONNX Runtime Web (WebGPU, falling back to WebAssembly). The model file, a few MB, downloads once and is cached. The photo never leaves the phone for analysis and a scan costs nothing, so diagnosis stays free.
+
+- The model proposes defects with a confidence; the user confirms or corrects, which labels more data. The run's settings then go through the Stage 4 rules: the model says what is wrong, the rules and your history say what to change.
+- **The limit is data, not money.** As a rule of thumb a usable classifier needs a few hundred confirmed photos per defect, so it launches with the common, visible defects (spaghetti, stringing, warping, layer shift, poor first layer, under-extrusion) and grows from there. Accuracy is measured on held-back Stage 0 photos before launch, and the accuracy per defect is shown to users rather than hidden.
+- **Training data:** opted-in contributions (Stage 0), plus public datasets only where the licence allows it. Never scraped Reddit or forum photos: those people did not consent.
+- **Public datasets (surveyed 2026-09-25).** Almost all are webcam or nozzle-camera shots taken during a print. SpoolStack's photos are phone shots of finished prints in uncontrolled light and angles. So public data is a head start for pretraining, never a substitute for Stage 0 photos, and **accuracy is only ever reported on SpoolStack's own held-back photos**, because the image types differ.
+
+  | Source | What it is | Licence | Use |
+  |---|---|---|---|
+  | CAXTON (Brion and Pattinson, Cambridge, Nature Communications 2022) | About 1.27 million nozzle-camera images from 8 Creality CR-20 Pro printers, PLA. Every image is labelled with flow rate, speed, Z offset, and hotend and bed temperature. | CC BY 4.0, commercial use allowed with attribution | **First choice.** The only large set that ties appearance to settings. Pretraining for extrusion and temperature. Weak on whole-part photos. |
+  | Zenodo, PLA and ABS layerwise defects | 11,593 photos from a 12 MP camera on a delta printer: warping, stringing, cracking. Built by varying temperature, speed and cooling on purpose. | Files restricted, no licence shown | Ask the authors before use. |
+  | Roboflow Universe projects | Hundreds of images each: spaghetti, stringing, detached layers, layer defects (one project has 655 images across 7 classes). | Varies by project, often "open source" without a named licence | Spaghetti and stringing, only from projects with a clear licence. |
+  | Kaggle defect sets | Small classification sets of 4 to 6 classes. | Not shown on the pages checked | Experiments only until each licence is confirmed. |
+  | 3D Printing Stack Exchange dump (Hugging Face) | Thousands of "what is wrong with my print" questions with answers. Text, not images. | CC BY-SA | Source material for the Stage 4 rules, with attribution. |
+
+  **Not for training:** copyrighted troubleshooting guides (Simplify3D, the Prusa knowledge base, All3DP), which are reading for writing the Stage 4 rules, and r/FixMyPrint or forum photos. Every source used goes into a `docs/datasets.md` register with its licence, version and attribution line before any model trained on it ships.
+- **Training** runs on a desktop GPU or rented GPU time, once per model release.
+
+#### Stage 6, calibration from your own results
+
+Bayesian success rates per printer and filament, with the Stage 4 rules as priors, and calibration prints read from photos.
+
+#### Stage 7, learning across users
+
+Opted-in pooled data retrains the model and each release ships to everyone. Locating a defect's height against the gcode layers comes here too.
+
+**Stage 0 photos, as built:** a private Storage bucket `run-photos` and a `run_photos` table (`db/run_photos.sql`, also folded into `db/schema.sql` as section 9). Files sit at `<user>/<run>/<photo>.jpg`; Storage policies allow only your own folder and your own runs, and the table's RLS re-checks the parent run because foreign-key checks bypass RLS. Photos are shrunk to 2048px on the device and re-encoded, which also strips EXIF location. Each photo has a kind (whole print, close-up, first layer, where it failed, other) and at most one defect label, one tap each. Saving a new run now opens that run's page so photos can be added straight away. Deleting a run or a photo removes the files as well as the rows. `runs.photos` and `run_defects.photo_path` are superseded but left in place. `db/run_photos.sql` ran on the live project on 2026-09-25 and checked out: the bucket is private with a 10 MB cap and image types only, 7 policies are in place, and RLS is on.
+
+### Competitors (checked 2026-09-25)
+
+| Product | What it does | Free? |
+|---|---|---|
+| 3D Print Log | Closest match. Logs prints with settings, photos, outcomes and filament; fills runs from PrusaSlicer, OrcaSlicer, Bambu Studio and Cura, and from OctoPrint and Klipper; success-rate charts. | Free for one printer; paid tiers not published. |
+| SimplyPrint | Cloud printer management, webcam failure detection, print history, filament. | Free for 2 printers, last 50 jobs, 12 AI hours a month. Paid from $5.99 a month. |
+| Obico | Webcam failure detection and remote access. | Free for 1 printer and 10 AI hours a month; free when self-hosted. |
+| Bambuddy, Spoolman, PrintStash, Spoolio | Self-hosted Bambu archive with costs; spool inventory; file vault with cost per part; spool tracker. | Free, mostly open source and self-hosted. |
+| Nozzle Doctor, PrintFix, PrintDoctor and others | Diagnose a failed print from a photo. Nozzle Doctor also reads the 3MF and settings and remembers your printer. | Mostly not published. |
+| LayerMath and about ten calculators | Cost and price calculators for print sellers. | Calculators free. |
+
+**Where SpoolStack is behind:** automatic capture (Stage 1), spool inventory (Stage 2), stats charts (Stage 3). Live webcam failure detection is deliberately not on the roadmap: it needs a permanent printer connection and per-frame compute.
+
+**Where SpoolStack is different:** cost per good part from logged failures rather than a guessed percentage; photos tied to the exact run's settings and outcome; fixes checked against whether the next print worked (Stages 0, 4 and 6), which no diagnosis tool shows evidence of; diagnosis on the device at no cost per scan; free with no printer or job caps and no self-hosting.
 
 ### Next actions
 
 1. ~~Commit M4 and M5, M4 exit test, phone install, connect `spool-stack.com`.~~ Done 2026-09-23.
 2. **Add `RESEND_API_KEY`** to the SpoolStack Vercel project so the contact form sends.
 3. **Search Console and Bing verification,** then submit `https://spool-stack.com/sitemap.xml`.
-4. **Run `db/run_photos.sql`** on the live project, then photograph every print during the dogfood.
+4. ~~Run `db/run_photos.sql` on the live project.~~ Done and verified 2026-09-25. Next: the first live photo upload test, then photograph every print during the dogfood.
 5. **The two-week dogfood** that closes Phase 1. Stopwatch targets from M2 still to record: under 60 seconds fresh, under 20 seconds repeat.
-6. **Stage 0 continued:** retry linking and full slicer-config capture. Phase 2 costing in the app, built on `src/lib/costing.ts`, can slot in alongside.
+6. **Stage 0 continued:** retry link, full slicer config, and the contribute opt-in with its privacy page paragraph.
+7. **Stage 1 first slice:** the slicer uploader, `/api/ingest` with upload tokens, and the "Did it print?" inbox.
+8. **Revise the FAQ answer** that says photo diagnosis might be paid one day. Under the rule above it will be free, because it runs on the device.
