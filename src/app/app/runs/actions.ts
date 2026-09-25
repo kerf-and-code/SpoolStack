@@ -16,6 +16,7 @@ import {
   type FieldErrors,
   type FormState,
 } from '@/lib/forms';
+import { PHOTO_BUCKET } from '@/lib/photos';
 import { parseParameterFields } from '@/lib/run-params';
 import type { ServerClient } from '@/lib/supabase/server';
 import { OUTCOMES } from './types';
@@ -259,7 +260,8 @@ export async function saveRun(_prev: FormState, formData: FormData): Promise<For
 
   revalidatePath('/app/runs');
   revalidatePath('/app');
-  redirect('/app/runs?notice=saved');
+  // To the new run's own page, where photos of the print can be added.
+  redirect(`/app/runs/${inserted.id}?notice=created`);
 }
 
 // ---------------------------------------------------------------------------
@@ -320,14 +322,26 @@ export async function updateRun(runId: string, _prev: FormState, formData: FormD
 // delete
 // ---------------------------------------------------------------------------
 
-/** Defects go with it (ON DELETE CASCADE). Nothing else references a run. */
+/**
+ * Defects and photo records go with it (ON DELETE CASCADE). The photo files
+ * are in Storage, which a cascade cannot reach, so they are removed here
+ * once the run itself is gone.
+ */
 export async function deleteRun(runId: string): Promise<void> {
   const { supabase } = await requireUser();
   if (!UUID.test(runId)) redirect('/app/runs');
 
+  const { data: photos } = await supabase.from('run_photos').select('storage_path').eq('run_id', runId);
+
   const { data, error } = await supabase.from('runs').delete().eq('id', runId).select('id');
   if (error || !data || data.length === 0) {
     redirect(`/app/runs/${runId}?notice=delete_failed`);
+  }
+
+  const paths = (photos ?? []).map((p) => p.storage_path);
+  if (paths.length > 0) {
+    const { error: storageError } = await supabase.storage.from(PHOTO_BUCKET).remove(paths);
+    if (storageError) console.error('run photo files not removed', runId, storageError.message);
   }
 
   revalidatePath('/app/runs');

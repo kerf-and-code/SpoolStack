@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 // Written to match what the code actually does. If a feature changes
 // what is collected (photos, analytics, error reporting, payments), this page
 // changes in the same commit.
-const UPDATED = 'September 23, 2026';
+const UPDATED = 'September 25, 2026';
 
 export default function PrivacyPage() {
   return (
@@ -38,6 +38,7 @@ export default function PrivacyPage() {
               <li>Your email address, used to sign you in. If you sign in with Google, Google shares your email address and basic profile with us for that purpose.</li>
               <li>The records you create: machines, materials, projects, runs, defects, notes and settings such as your currency and electricity rate.</li>
               <li>Print settings pulled from a slicer file when you use import, such as layer height, temperatures and filament used.</li>
+              <li>Photos you add to runs, with the labels you give them. Each photo is shrunk on your device and its location data is removed before upload. Photos are stored privately and only your account can see them.</li>
             </ul>
           </section>
 
@@ -81,7 +82,7 @@ export default function PrivacyPage() {
           <section>
             <h2>Where your data lives</h2>
             <p>
-              Your records are stored in a Supabase database hosted in the United States, and the site is served
+              Your records and photos are stored with Supabase, in the United States, and the site is served
               by Vercel. Both act as service providers and process data only to run {SITE_NAME}. Each account can
               read only its own records; this is enforced by the database, not just the app.
             </p>

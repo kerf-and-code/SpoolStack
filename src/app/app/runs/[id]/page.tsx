@@ -8,14 +8,18 @@ import { requireUser } from '@/lib/auth';
 import type { Json } from '@/lib/database.types';
 import { formatDuration } from '@/lib/duration';
 import { formatNumber } from '@/lib/format';
+import { PHOTO_BUCKET, PHOTOS_PER_RUN_LIMIT, defaultPhotoKind, isPhotoKind } from '@/lib/photos';
 import { deleteRun } from '../actions';
 import { PARAM_DEF_COLUMNS } from '../data';
 import { OutcomeBadge } from '../outcome-badge';
+import { PhotoCard, type DefectOption } from './photo-card';
+import { PhotoUploader } from './photo-uploader';
 
 export const metadata: Metadata = { title: 'Run : SpoolStack' };
 
 const NOTICES: Record<string, { tone: 'ok' | 'error'; text: string }> = {
   saved: { tone: 'ok', text: 'Changes saved.' },
+  created: { tone: 'ok', text: 'Run saved. When the print is off the bed, add photos of it below.' },
   delete_failed: { tone: 'error', text: 'Delete failed. Nothing was removed.' },
 };
 
@@ -46,9 +50,9 @@ export default async function RunDetailPage({
 }) {
   const { id } = await params;
   const { notice } = await searchParams;
-  const { supabase } = await requireUser();
+  const { supabase, userId } = await requireUser();
 
-  const [{ data: run, error }, defectsRes] = await Promise.all([
+  const [{ data: run, error }, defectsRes, photosRes] = await Promise.all([
     supabase
       .from('runs')
       .select('*, machines(name), materials(name, unit), projects(name)')
@@ -58,14 +62,36 @@ export default async function RunDetailPage({
       .from('run_defects')
       .select('defect_type_id, severity, defect_types(display_name, is_process_related, sort_order)')
       .eq('run_id', id),
+    supabase
+      .from('run_photos')
+      .select('id, storage_path, kind, defect_type_id')
+      .eq('run_id', id)
+      .order('created_at'),
   ]);
   if (error || !run) notFound();
 
-  const { data: defs } = await supabase
-    .from('parameter_defs')
-    .select(PARAM_DEF_COLUMNS)
-    .eq('domain_id', run.domain_id)
-    .order('sort_order');
+  const [{ data: defs }, { data: defectTypes }] = await Promise.all([
+    supabase.from('parameter_defs').select(PARAM_DEF_COLUMNS).eq('domain_id', run.domain_id).order('sort_order'),
+    supabase
+      .from('defect_types')
+      .select('id, display_name, sort_order')
+      .eq('domain_id', run.domain_id)
+      .eq('is_active', true)
+      .order('sort_order'),
+  ]);
+
+  // Photos are private: each gets a signed URL that expires in an hour, which
+  // is regenerated on every visit to this page.
+  const photos = photosRes.data ?? [];
+  const signed = new Map<string, string>();
+  if (photos.length > 0) {
+    const { data: urls } = await supabase.storage
+      .from(PHOTO_BUCKET)
+      .createSignedUrls(photos.map((p) => p.storage_path), 3600);
+    for (const u of urls ?? []) {
+      if (u.path && u.signedUrl) signed.set(u.path, u.signedUrl);
+    }
+  }
 
   const unit = run.materials?.unit ?? 'g';
   const noticeInfo = notice ? NOTICES[notice] : undefined;
@@ -93,6 +119,13 @@ export default async function RunDetailPage({
   const defects = (defectsRes.data ?? [])
     .filter((d) => d.defect_types)
     .sort((a, b) => (a.defect_types?.sort_order ?? 0) - (b.defect_types?.sort_order ?? 0));
+
+  const runDefectIds = new Set(defects.map((d) => d.defect_type_id));
+  const defectOptions: DefectOption[] = (defectTypes ?? []).map((d) => ({
+    id: d.id,
+    label: d.display_name,
+    onRun: runDefectIds.has(d.id),
+  }));
 
   const meta = asObject(run.source_metadata);
   const metaText = (k: string) => (typeof meta[k] === 'string' ? (meta[k] as string) : null);
@@ -178,6 +211,42 @@ export default async function RunDetailPage({
         ))}
       </dl>
 
+      <section className="mt-8" id="photos">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-semibold">Photos</h2>
+          <span className="text-xs opacity-55">
+            {photos.length} of {PHOTOS_PER_RUN_LIMIT}
+          </span>
+        </div>
+        <p className="mt-1 text-sm opacity-65">
+          A shot of the whole print, and a close-up of anything that went wrong. Tagging the defect each photo shows
+          is what will teach SpoolStack to spot it later.
+        </p>
+        <div className="mt-3">
+          <PhotoUploader
+            runId={run.id}
+            userId={userId}
+            defaultKind={defaultPhotoKind(run.outcome)}
+            remaining={PHOTOS_PER_RUN_LIMIT - photos.length}
+          />
+        </div>
+        {photos.length > 0 ? (
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {photos.map((p, i) => (
+              <PhotoCard
+                key={p.id}
+                id={p.id}
+                index={i}
+                url={signed.get(p.storage_path) ?? null}
+                kind={isPhotoKind(p.kind) ? p.kind : 'other'}
+                defectTypeId={p.defect_type_id}
+                defects={defectOptions}
+              />
+            ))}
+          </div>
+        ) : null}
+      </section>
+
       {defects.length > 0 ? (
         <section className="mt-8">
           <h2 className="font-semibold">Defects</h2>
@@ -259,7 +328,8 @@ export default async function RunDetailPage({
       <section className="mt-12 border-t border-black/10 pt-6 dark:border-white/15">
         <h2 className="text-base font-semibold">Delete</h2>
         <p className="mt-1 text-sm opacity-65">
-          Removes this run and its defects. Costs and failure rates are recalculated without it. This cannot be undone.
+          Removes this run, its defects and its photos. Costs and failure rates are recalculated without it. This cannot
+          be undone.
         </p>
         <form action={deleteRun.bind(null, run.id)} className="mt-3">
           <ConfirmSubmit

@@ -375,10 +375,25 @@ Asked for after M5: a marketing site "similar to the other sites", with features
 - **Only one free tool for now,** the cost calculator. Quote pricing, filament converters and printer spec pages were considered and left for later.
 - **Logo (2026-09-24):** a single S made of two empty spools of the same size, stacked face-on and touching exactly at the centre, each ring cut open on opposite sides. Top spool cream (ink on light backgrounds), bottom spool orange, on the ink tile. Chosen partly so the name is never shortened to a double-S monogram, and the wordmark is set lowercase, `spoolstack`, so no two capital S's sit together. Explored along the way: unequal and offset spools, flange and disc depth treatments, and second accent colours; the plain, aligned version won. The spool hubs show at 40px and up; the favicon and small header marks use the plain S, because the hubs blur at that size. Source geometry: `LogoMark` in `src/components/site/logo-mark.tsx`, on the same 512 grid as the PNG icons. Worth a quick trademark and image search before it goes on anything printed.
 
+### The end state and the road to it (agreed 2026-09-25)
+
+The end state: photograph a finished print. A success is logged with its settings from the gcode; a failure is diagnosed against those settings, and SpoolStack suggests the calibration change most likely to make the next print work. It is one loop (photograph, diagnose, adjust, reprint, check whether the change worked), which merges the spec's Phase 3 (calibration) and Phase 4 (photo diagnosis). Costing is useful but off this critical path.
+
+Ground rules: diagnosis ("that is stringing") and recommendation ("drop 5 C") are built and tested separately; nothing promises a successful print, only the most likely fix with its evidence; a retry has to be linked to the run it retries, or the loop cannot learn whether a fix worked.
+
+- **Stage 0, collect (now):** photos on runs with a shot type and a defect label per photo (**built 2026-09-25**), then a "retry of" link recording what changed, then storing the full slicer config rather than the 21 mapped settings. No AI. Its value is the dataset, which only grows with time.
+- **Stage 1, fix suggestions without AI:** defect plus the run's actual settings, through a curated rule set seeded from `defect_types.likely_causes`, gives ranked one-change-at-a-time suggestions.
+- **Stage 2, photo diagnosis:** a general vision model, given the defect list and the run's settings, proposes defects with confidence; the user confirms or corrects, which labels the data. Accuracy is measured on the Stage 0 photos before launch. Per-scan cost makes this the one feature that may be paid.
+- **Stage 3, calibration from your own results:** Bayesian success rates per printer and filament, with Stage 1 rules as priors, and calibration prints read from photos.
+- **Stage 4:** pooled, opt-in learning across users; a model of our own trained on confirmed labels; locating a defect's height against the gcode layer.
+
+**Stage 0 photos, as built:** a private Storage bucket `run-photos` and a `run_photos` table (`db/run_photos.sql`, also folded into `db/schema.sql` as section 9). Files sit at `<user>/<run>/<photo>.jpg`; Storage policies allow only your own folder and your own runs, and the table's RLS re-checks the parent run because foreign-key checks bypass RLS. Photos are shrunk to 2048px on the device and re-encoded, which also strips EXIF location. Each photo has a kind (whole print, close-up, first layer, where it failed, other) and at most one defect label, one tap each. Saving a new run now opens that run's page so photos can be added straight away. Deleting a run or a photo removes the files as well as the rows. `runs.photos` and `run_defects.photo_path` are superseded but left in place.
+
 ### Next actions
 
 1. ~~Commit M4 and M5, M4 exit test, phone install, connect `spool-stack.com`.~~ Done 2026-09-23.
 2. **Add `RESEND_API_KEY`** to the SpoolStack Vercel project so the contact form sends.
 3. **Search Console and Bing verification,** then submit `https://spool-stack.com/sitemap.xml`.
-4. **The two-week dogfood** that closes Phase 1. Stopwatch targets from M2 still to record: under 60 seconds fresh, under 20 seconds repeat.
-5. **Phase 2 costing in the app,** built on `src/lib/costing.ts`.
+4. **Run `db/run_photos.sql`** on the live project, then photograph every print during the dogfood.
+5. **The two-week dogfood** that closes Phase 1. Stopwatch targets from M2 still to record: under 60 seconds fresh, under 20 seconds repeat.
+6. **Stage 0 continued:** retry linking and full slicer-config capture. Phase 2 costing in the app, built on `src/lib/costing.ts`, can slot in alongside.

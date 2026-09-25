@@ -392,6 +392,73 @@ export type Database = {
           },
         ]
       }
+      run_photos: {
+        Row: {
+          bytes: number | null
+          caption: string | null
+          created_at: string
+          defect_type_id: number | null
+          height: number | null
+          id: string
+          kind: string
+          run_id: string
+          storage_path: string
+          updated_at: string
+          user_id: string
+          width: number | null
+        }
+        Insert: {
+          bytes?: number | null
+          caption?: string | null
+          created_at?: string
+          defect_type_id?: number | null
+          height?: number | null
+          id?: string
+          kind?: string
+          run_id: string
+          storage_path: string
+          updated_at?: string
+          user_id: string
+          width?: number | null
+        }
+        Update: {
+          bytes?: number | null
+          caption?: string | null
+          created_at?: string
+          defect_type_id?: number | null
+          height?: number | null
+          id?: string
+          kind?: string
+          run_id?: string
+          storage_path?: string
+          updated_at?: string
+          user_id?: string
+          width?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "run_photos_defect_type_id_fkey"
+            columns: ["defect_type_id"]
+            isOneToOne: false
+            referencedRelation: "defect_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "run_photos_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "run_cost_breakdown"
+            referencedColumns: ["run_id"]
+          },
+          {
+            foreignKeyName: "run_photos_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       runs: {
         Row: {
           active_labor_minutes: number
