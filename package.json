@@ -16,7 +16,9 @@
     "test:contact": "node --experimental-strip-types src/lib/contact.test.ts",
     "test:photos": "node --experimental-strip-types src/lib/photos.test.ts",
     "test:slicer-config": "node --experimental-strip-types src/lib/slicer-config.test.ts",
-    "test:run-diff": "node --experimental-strip-types src/lib/run-diff.test.ts"
+    "test:run-diff": "node --experimental-strip-types src/lib/run-diff.test.ts",
+    "test:ingest": "node --experimental-strip-types src/lib/ingest.test.ts",
+    "test:inbox": "node --experimental-strip-types src/lib/inbox.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

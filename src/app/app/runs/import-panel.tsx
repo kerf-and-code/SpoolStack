@@ -39,6 +39,8 @@ export interface ImportSummary {
   configCount: number;
   /** JSON for runs.slicer_config, or null. */
   configJson: string | null;
+  /** The inbox entry this file came from, when the slicer uploader sent it. */
+  pendingId: string | null;
   /** Values outside the dictionary's range. Left blank in the form, never clamped in. */
   outOfRange: { label: string; value: number; range: string }[];
   notes: string[];

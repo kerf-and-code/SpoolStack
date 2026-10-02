@@ -72,6 +72,17 @@ export interface RetryContext {
   source: RecentRun | null;
 }
 
+/** A file the slicer uploader sent, opened from the inbox into the run form. */
+export interface PendingImport {
+  id: string;
+  fileName: string;
+  /** pending_runs.parsed, read back through storedParse() in the form. */
+  parsed: Json;
+  slicerConfig: Record<string, string> | null;
+  /** Preselected from the inbox button: "Failed" opens the form as a failure. */
+  outcome: Outcome | '';
+}
+
 /** Prefill for editing an existing run. Built on the server from the stored row. */
 export interface RunEditInitial {
   runId: string;

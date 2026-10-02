@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 // Written to match what the code actually does. If a feature changes
 // what is collected (photos, analytics, error reporting, payments), this page
 // changes in the same commit.
-const UPDATED = 'October 1, 2026';
+const UPDATED = 'October 2, 2026';
 
 export default function PrivacyPage() {
   return (
@@ -40,13 +40,14 @@ export default function PrivacyPage() {
               <li>Print settings pulled from a slicer file when you use import: the ones shown in the form, such as layer height, temperatures and filament used, and every other named setting in the file (several hundred on most files). Custom start and end G-code, and anything that could hold a password, a printer address or a path on your computer, are left out.</li>
               <li>Photos you add to runs, with the labels you give them. Each photo is shrunk on your device and its location data is removed before upload. Photos are stored privately and only your account can see them, unless you switch on diagnosis training, below.</li>
               <li>Which run a retry is a retry of, and what you say you changed.</li>
+              <li>If you use the slicer uploader: the settings part of each file you slice (print time, filament used and the slicer&rsquo;s settings, the same values an import reads), the file&rsquo;s name, and the entry it makes under &ldquo;Did it print?&rdquo;, including ones you set aside. Upload tokens are stored only as a one-way hash, so the token itself is never kept.</li>
             </ul>
           </section>
 
           <section>
             <h2>What is not stored</h2>
             <ul>
-              <li>Slicer files. When you import a .gcode or .3mf file it is read in your browser and only its settings are saved. The file itself, and the model in it, never leave your device.</li>
+              <li>Slicer files. When you import a .gcode or .3mf file it is read in your browser and only its settings are saved. The slicer uploader sends only the settings part of a file. The file itself, the model and the print moves never leave your computer.</li>
               <li>Payment details. {SITE_NAME} does not take payments.</li>
               <li>Tracking data. There are no analytics, advertising or social media scripts on this site.</li>
             </ul>

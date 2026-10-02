@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { EntityForm, type FieldGroup } from '@/components/entity-form';
 import { PageHeader } from '@/components/page-header';
 import { requireUser } from '@/lib/auth';
@@ -86,6 +87,16 @@ export default async function SettingsPage() {
     <div className="max-w-2xl">
       <PageHeader title="Settings" description="The rates every cost in SpoolStack is calculated from." />
       <EntityForm action={saveSettings} groups={groups} submitLabel="Save settings" />
+      <section className="mt-12 border-t border-black/10 pt-6 dark:border-white/15">
+        <h2 className="text-base font-semibold">Slicer uploader</h2>
+        <p className="mt-2 text-sm opacity-75">
+          Send every file you slice in PrusaSlicer, OrcaSlicer or Bambu Studio straight to your dashboard, so logging a
+          print is one tap.
+        </p>
+        <Link href="/app/settings/uploader" className="mt-3 inline-block text-sm font-medium underline underline-offset-2">
+          Set up the slicer uploader
+        </Link>
+      </section>
       <ContributeToggle
         initial={settings?.contribute_training ?? false}
         changedAtIso={settings?.contribute_training_changed_at ?? null}

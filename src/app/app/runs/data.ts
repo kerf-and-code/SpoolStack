@@ -1,7 +1,7 @@
 // Loads everything the run form needs. Shared by /new and /[id]/edit.
 
 import type { ServerClient } from '@/lib/supabase/server';
-import { OUTCOMES, type Outcome, type RetryContext, type RunFormData } from './types';
+import { OUTCOMES, type Outcome, type PendingImport, type RetryContext, type RunFormData } from './types';
 
 export const PARAM_DEF_COLUMNS =
   'key, display_name, group_name, data_type, unit, min_value, max_value, step, enum_options, is_required, help_text, sort_order, domain_id';
@@ -111,5 +111,35 @@ export async function loadRetryContext(
           parameters: run.parameters,
         }
       : null,
+  };
+}
+
+/**
+ * A still-pending upload from the slicer uploader, for opening in the run
+ * form. Null when it is not yours, already logged or dismissed, or the id is
+ * malformed.
+ */
+export async function loadPendingImport(
+  supabase: ServerClient,
+  pendingId: string | null | undefined,
+  outcome: string | null | undefined,
+): Promise<PendingImport | null> {
+  if (!pendingId || !UUID.test(pendingId)) return null;
+  const { data } = await supabase
+    .from('pending_runs')
+    .select('id, file_name, parsed, slicer_config, status')
+    .eq('id', pendingId)
+    .maybeSingle();
+  if (!data || data.status !== 'pending') return null;
+  const config =
+    data.slicer_config && typeof data.slicer_config === 'object' && !Array.isArray(data.slicer_config)
+      ? (data.slicer_config as Record<string, string>)
+      : null;
+  return {
+    id: data.id,
+    fileName: data.file_name,
+    parsed: data.parsed,
+    slicerConfig: config,
+    outcome: (OUTCOMES as readonly string[]).includes(outcome ?? '') ? (outcome as Outcome) : '',
   };
 }

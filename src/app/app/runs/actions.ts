@@ -289,6 +289,18 @@ export async function saveRun(_prev: FormState, formData: FormData): Promise<For
     }
   }
 
+  // A file from the slicer uploader leaves the inbox once it is a run. Only a
+  // still-pending entry is closed; RLS limits it to your own.
+  const pendingId = String(formData.get('pending_id') ?? '').trim();
+  if (source === 'gcode_import' && UUID.test(pendingId)) {
+    const { error: pendingError } = await supabase
+      .from('pending_runs')
+      .update({ status: 'logged', run_id: inserted.id, resolved_at: new Date().toISOString() })
+      .eq('id', pendingId)
+      .eq('status', 'pending');
+    if (pendingError) console.error('pending run not closed', pendingId, pendingError.message);
+  }
+
   revalidatePath('/app/runs');
   revalidatePath('/app');
   // To the new run's own page, where photos of the print can be added.

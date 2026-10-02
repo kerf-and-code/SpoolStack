@@ -24,9 +24,10 @@ import { startTransition, useActionState, useMemo, useState, useSyncExternalStor
 import { LocalTime } from '@/components/local-time';
 import { formatDuration, parseDurationMinutes } from '@/lib/duration';
 import { readSlicedFile, titleFromFileName } from '@/lib/gcode-file';
-import { extractSlicerConfig } from '@/lib/slicer-config';
-import { parseGcode, validateParameters, type ParameterDef } from '@/lib/gcodeParse';
+import { extractSlicerConfig, type SlicerConfigResult } from '@/lib/slicer-config';
+import { parseGcode, type ParsedRun } from '@/lib/gcodeParse';
 import { idleState, type FormState } from '@/lib/forms';
+import { acceptImportedParameters, importMetadata, storedParse, type ImportOrigin } from '@/lib/import-record';
 import { matchMachines, matchMaterial } from '@/lib/import-match';
 import { PARAM_PREFIX, parametersToFields, type ParamDefRow } from '@/lib/run-params';
 import { createMachineFromImport } from '../machines/actions';
@@ -35,7 +36,9 @@ import { ImportPanel, type ImportSummary, type MachineStatus, type MaterialStatu
 import {
   OUTCOMES,
   type MachineOption,
+  type MaterialOption,
   type Outcome,
+  type PendingImport,
   type RecentRun,
   type RetryContext,
   type RunEditInitial,
@@ -99,11 +102,107 @@ function valuesFromRun(run: RecentRun, defs: ParamDefRow[], projectIds: Set<stri
   };
 }
 
+interface ImportContext {
+  parameterDefs: ParamDefRow[];
+  machineList: MachineOption[];
+  materials: MaterialOption[];
+  machineId: string;
+  materialId: string;
+  title: string;
+}
+
+/**
+ * A parsed slicer file to form values and the summary panel. Pure: used for
+ * a file picked here and for a file the slicer uploader sent.
+ */
+function computeImport(
+  parsed: ParsedRun,
+  config: Pick<SlicerConfigResult, 'config' | 'format' | 'skipped'>,
+  origin: ImportOrigin,
+  ctx: ImportContext,
+): { patch: Record<string, string>; summary: ImportSummary } {
+  const { parameterDefs, machineList, materials } = ctx;
+  const { accepted, outOfRange, validation } = acceptImportedParameters(parsed.parameters, parameterDefs);
+
+  // Machine: auto-select only on exactly one match.
+  let machineId = ctx.machineId;
+  let machineStatus: MachineStatus = { kind: 'none' };
+  if (parsed.printerModel) {
+    const matches = matchMachines(parsed.printerModel, machineList);
+    const current = matches.find((m) => m.id === machineId);
+    if (current) machineStatus = { kind: 'kept', name: current.name };
+    else if (matches.length === 1) {
+      machineId = matches[0].id;
+      machineStatus = { kind: 'selected', name: matches[0].name };
+    } else if (matches.length > 1) {
+      machineStatus = { kind: 'ambiguous', model: parsed.printerModel, names: matches.map((m) => m.name) };
+    } else {
+      machineStatus = {
+        kind: 'offer',
+        model: parsed.printerModel,
+        current: machineList.find((m) => m.id === machineId)?.name ?? null,
+      };
+    }
+  }
+
+  // Material: same rule, with brand as the tie-breaker.
+  let materialId = ctx.materialId;
+  let materialStatus: MaterialStatus = { kind: 'none' };
+  if (parsed.filamentType) {
+    const m = matchMaterial(parsed.filamentType, parsed.filamentBrand, materials, materialId);
+    if (m.kind === 'keep') materialStatus = { kind: 'kept', name: m.material.name };
+    else if (m.kind === 'select') {
+      materialId = m.material.id;
+      materialStatus = { kind: 'selected', name: m.material.name };
+    } else if (m.kind === 'ambiguous') {
+      materialStatus = { kind: 'ambiguous', type: parsed.filamentType, names: m.candidates.map((c) => c.name) };
+    } else materialStatus = { kind: 'unmatched', type: parsed.filamentType };
+  }
+
+  const paramFields = parametersToFields(accepted, parameterDefs.filter((d) => d.domain_id === 'fdm'));
+  const notes = [...origin.notes, ...parsed.warnings];
+
+  return {
+    patch: {
+      machine_id: machineId,
+      material_id: materialId,
+      // The file defines this record: a value it does not contain is blank,
+      // not left over from whatever was typed or copied before.
+      duration: parsed.durationMinutes !== null ? formatDuration(parsed.durationMinutes) : '',
+      material_qty_used: parsed.materialQtyUsedG !== null ? String(parsed.materialQtyUsedG) : '',
+      title: ctx.title || titleFromFileName(origin.fileName),
+      ...blankParamsFor(parameterDefs),
+      ...paramFields,
+    },
+    summary: {
+      fileName: origin.fileName,
+      plate: origin.plate,
+      slicer: parsed.slicer,
+      durationMinutes: parsed.durationMinutes,
+      grams: parsed.materialQtyUsedG,
+      materialSource: parsed.materialSource,
+      unit: materials.find((m) => m.id === materialId)?.unit ?? 'g',
+      settingsFilled: Object.keys(paramFields).length,
+      configCount: config.config ? Object.keys(config.config).length : 0,
+      configJson: config.config ? JSON.stringify(config.config) : null,
+      outOfRange,
+      notes,
+      machine: machineStatus,
+      material: materialStatus,
+      pendingId: origin.pendingId ?? null,
+      metadataJson: JSON.stringify(
+        importMetadata(parsed, { format: config.format, skipped: config.skipped }, { ...origin, notes }, validation),
+      ),
+    },
+  };
+}
+
 export function RunForm({
   data,
   action = saveRun,
   initial,
   retry,
+  fromUpload,
 }: {
   data: RunFormData;
   /** Server action: saveRun for a new run, updateRun bound to an id for an edit. */
@@ -112,6 +211,8 @@ export function RunForm({
   initial?: RunEditInitial;
   /** Present when this run retries another: a new retry, or editing one. */
   retry?: RetryContext;
+  /** A file the slicer uploader sent, opened from the "Did it print?" inbox. */
+  fromUpload?: PendingImport;
 }) {
   const { machines, materials, projects, parameterDefs, defectTypes, recentRuns } = data;
   const editing = initial !== undefined;
@@ -121,27 +222,41 @@ export function RunForm({
   const last = recentRuns[0] ?? null;
   // A new retry starts from the run it retries, not from the latest run.
   const retrySource = !editing ? (retry?.source ?? null) : null;
-  const [values, setValues] = useState<Record<string, string>>(() => ({
-    machine_id: pickDefault(machines.map((m) => m.id), retrySource ? retrySource.machine_id : last?.machine_id),
-    material_id: pickDefault(materials.map((m) => m.id), retrySource ? retrySource.material_id : last?.material_id),
-    project_id: '',
-    title: '',
-    outcome: '',
-    duration: '',
-    material_qty_used: '',
-    units_produced: '1',
-    units_good: '',
-    completed_at: '',
-    active_labor_minutes: '',
-    quality_rating: '',
-    notes: '',
-    retry_change_note: '',
-    ...(retrySource ? valuesFromRun(retrySource, parameterDefs, new Set(projects.map((p) => p.id))) : {}),
-    ...(initial?.values ?? {}),
-  }));
+  // Starting values, worked out once. A file from the slicer uploader is
+  // applied exactly as if it had been picked in the import panel.
+  const [boot] = useState(() => {
+    const base: Record<string, string> = {
+      machine_id: pickDefault(machines.map((m) => m.id), retrySource ? retrySource.machine_id : last?.machine_id),
+      material_id: pickDefault(materials.map((m) => m.id), retrySource ? retrySource.material_id : last?.material_id),
+      project_id: '',
+      title: '',
+      outcome: '',
+      duration: '',
+      material_qty_used: '',
+      units_produced: '1',
+      units_good: '',
+      completed_at: '',
+      active_labor_minutes: '',
+      quality_rating: '',
+      notes: '',
+      retry_change_note: '',
+      ...(retrySource ? valuesFromRun(retrySource, parameterDefs, new Set(projects.map((p) => p.id))) : {}),
+      ...(initial?.values ?? {}),
+    };
+    if (!fromUpload || editing) return { values: base, summary: null as ImportSummary | null };
+    const parsed = storedParse(fromUpload.parsed);
+    const { patch, summary } = computeImport(
+      parsed,
+      { config: fromUpload.slicerConfig, format: parsed.config_format === 'prusa' || parsed.config_format === 'bambu_orca' ? parsed.config_format : null, skipped: parsed.config_skipped },
+      { fileName: fromUpload.fileName, kind: 'gcode', plate: null, notes: [], pendingId: fromUpload.id },
+      { parameterDefs, machineList: machines, materials, machineId: base.machine_id, materialId: base.material_id, title: base.title },
+    );
+    return { values: { ...base, ...patch, outcome: fromUpload.outcome }, summary };
+  });
+  const [values, setValues] = useState<Record<string, string>>(boot.values);
   const [weighed, setWeighed] = useState(initial?.weighed ?? false);
   const [defects, setDefects] = useState<Record<number, string>>(initial?.defects ?? {});
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(Boolean(boot.summary && boot.summary.settingsFilled > 0));
   const [showDetails, setShowDetails] = useState(false);
   // An edited success that already has defects must show them, or they could not be unticked.
   const [showDefectsOnSuccess, setShowDefectsOnSuccess] = useState(
@@ -151,7 +266,7 @@ export function RunForm({
 
   // A machine can be added mid-form from a gcode import, so the list is state.
   const [machineList, setMachineList] = useState<MachineOption[]>(machines);
-  const [imported, setImported] = useState<ImportSummary | null>(null);
+  const [imported, setImported] = useState<ImportSummary | null>(boot.summary);
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [addingMachine, setAddingMachine] = useState(false);
@@ -201,8 +316,6 @@ export function RunForm({
 
   const candidate = bestMatch(recentRuns, values.machine_id, values.material_id);
 
-  const blankParams = () => blankParamsFor(parameterDefs);
-
   function copyFrom(run: RecentRun) {
     setValues((prev) => ({
       ...prev,
@@ -229,111 +342,26 @@ export function RunForm({
       }
       const parsed = parseGcode(read.text);
       const slicerConfig = extractSlicerConfig(read.text);
-
-      // Gcode is FDM. Validate against the FDM dictionary, and drop anything
-      // clamped: an out-of-range value from a file is shown, not stored.
-      const fdmDefs = parameterDefs.filter((d) => d.domain_id === 'fdm');
-      const validation = validateParameters(parsed.parameters, fdmDefs as unknown as ParameterDef[]);
-      const accepted = { ...validation.accepted };
-      const outOfRange: ImportSummary['outOfRange'] = [];
-      for (const [key, [original]] of Object.entries(validation.clamped)) {
-        delete accepted[key];
-        const def = fdmDefs.find((d) => d.key === key);
-        outOfRange.push({
-          label: def?.display_name ?? key,
-          value: original,
-          range: def ? `${def.min_value} to ${def.max_value}${def.unit ? ` ${def.unit}` : ''}` : 'a different range',
-        });
-      }
-
-      // Machine: auto-select only on exactly one match.
-      let machineId = values.machine_id;
-      let machineStatus: MachineStatus = { kind: 'none' };
-      if (parsed.printerModel) {
-        const matches = matchMachines(parsed.printerModel, machineList);
-        const current = matches.find((m) => m.id === machineId);
-        if (current) machineStatus = { kind: 'kept', name: current.name };
-        else if (matches.length === 1) {
-          machineId = matches[0].id;
-          machineStatus = { kind: 'selected', name: matches[0].name };
-        } else if (matches.length > 1) {
-          machineStatus = { kind: 'ambiguous', model: parsed.printerModel, names: matches.map((m) => m.name) };
-        } else {
-          machineStatus = {
-            kind: 'offer',
-            model: parsed.printerModel,
-            current: machineList.find((m) => m.id === machineId)?.name ?? null,
-          };
-        }
-      }
-
-      // Material: same rule, with brand as the tie-breaker.
-      let materialId = values.material_id;
-      let materialStatus: MaterialStatus = { kind: 'none' };
-      if (parsed.filamentType) {
-        const m = matchMaterial(parsed.filamentType, parsed.filamentBrand, materials, materialId);
-        if (m.kind === 'keep') materialStatus = { kind: 'kept', name: m.material.name };
-        else if (m.kind === 'select') {
-          materialId = m.material.id;
-          materialStatus = { kind: 'selected', name: m.material.name };
-        } else if (m.kind === 'ambiguous') {
-          materialStatus = { kind: 'ambiguous', type: parsed.filamentType, names: m.candidates.map((c) => c.name) };
-        } else materialStatus = { kind: 'unmatched', type: parsed.filamentType };
-      }
-
-      const paramFields = parametersToFields(accepted, fdmDefs);
-      const notes = [...read.notes, ...parsed.warnings];
-
-      setValues((prev) => ({
-        ...prev,
-        machine_id: machineId,
-        material_id: materialId,
-        // The file defines this record: a value it does not contain is blank,
-        // not left over from whatever was typed or copied before.
-        duration: parsed.durationMinutes !== null ? formatDuration(parsed.durationMinutes) : '',
-        material_qty_used: parsed.materialQtyUsedG !== null ? String(parsed.materialQtyUsedG) : '',
-        title: prev.title || titleFromFileName(read.fileName),
-        ...blankParams(),
-        ...paramFields,
-      }));
+      const { patch, summary } = computeImport(
+        parsed,
+        slicerConfig,
+        { fileName: read.fileName, kind: read.kind, plate: read.plate, notes: read.notes },
+        {
+          parameterDefs,
+          machineList,
+          materials,
+          machineId: values.machine_id,
+          materialId: values.material_id,
+          title: values.title,
+        },
+      );
+      setValues((prev) => ({ ...prev, ...patch }));
       setWeighed(false);
       setCopiedFrom(null);
-      setImported({
-        fileName: read.fileName,
-        plate: read.plate,
-        slicer: parsed.slicer,
-        durationMinutes: parsed.durationMinutes,
-        grams: parsed.materialQtyUsedG,
-        materialSource: parsed.materialSource,
-        unit: materials.find((m) => m.id === materialId)?.unit ?? 'g',
-        settingsFilled: Object.keys(paramFields).length,
-        configCount: slicerConfig.config ? Object.keys(slicerConfig.config).length : 0,
-        configJson: slicerConfig.config ? JSON.stringify(slicerConfig.config) : null,
-        outOfRange,
-        notes,
-        machine: machineStatus,
-        material: materialStatus,
-        metadataJson: JSON.stringify({
-          parser_version: 2,
-          file_name: read.fileName,
-          file_kind: read.kind,
-          plate: read.plate,
-          slicer: parsed.slicer,
-          printer_model: parsed.printerModel,
-          filament_type: parsed.filamentType,
-          filament_brand: parsed.filamentBrand,
-          material_source: parsed.materialSource,
-          config_format: slicerConfig.format,
-          config_skipped: slicerConfig.skipped,
-          raw: parsed.raw,
-          notes,
-          clamped: validation.clamped,
-          rejected: validation.rejected,
-        }),
-      });
+      setImported(summary);
       // Settings live in a collapsed section. Open it so the user sees what
       // the file filled in before saving.
-      if (Object.keys(paramFields).length > 0) setShowSettings(true);
+      if (summary.settingsFilled > 0) setShowSettings(true);
     } catch (e) {
       setImportError(`Could not read that file. ${e instanceof Error ? e.message : ''}`.trim());
     } finally {
@@ -402,6 +430,7 @@ export function RunForm({
           <input type="hidden" name="source" value={imported ? 'gcode_import' : 'manual'} />
           {imported ? <input type="hidden" name="source_metadata" value={imported.metadataJson} /> : null}
           {imported?.configJson ? <input type="hidden" name="slicer_config" value={imported.configJson} /> : null}
+          {imported?.pendingId ? <input type="hidden" name="pending_id" value={imported.pendingId} /> : null}
 
           {/* --------------------------------------------- import from file */}
           <ImportPanel

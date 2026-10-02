@@ -301,6 +301,78 @@ export type Database = {
           },
         ]
       }
+      pending_runs: {
+        Row: {
+          created_at: string
+          duration_minutes: number | null
+          file_name: string
+          id: string
+          material_g: number | null
+          parsed: Json
+          printer_model: string | null
+          resolved_at: string | null
+          run_id: string | null
+          slicer: string | null
+          slicer_config: Json | null
+          sliced_at: string
+          status: string
+          token_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          duration_minutes?: number | null
+          file_name: string
+          id?: string
+          material_g?: number | null
+          parsed?: Json
+          printer_model?: string | null
+          resolved_at?: string | null
+          run_id?: string | null
+          slicer?: string | null
+          slicer_config?: Json | null
+          sliced_at?: string
+          status?: string
+          token_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          duration_minutes?: number | null
+          file_name?: string
+          id?: string
+          material_g?: number | null
+          parsed?: Json
+          printer_model?: string | null
+          resolved_at?: string | null
+          run_id?: string | null
+          slicer?: string | null
+          slicer_config?: Json | null
+          sliced_at?: string
+          status?: string
+          token_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pending_runs_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pending_runs_token_id_fkey"
+            columns: ["token_id"]
+            isOneToOne: false
+            referencedRelation: "upload_tokens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           client: string | null
@@ -588,6 +660,39 @@ export type Database = {
           },
         ]
       }
+      upload_tokens: {
+        Row: {
+          created_at: string
+          id: string
+          last_used_at: string | null
+          name: string
+          revoked_at: string | null
+          token_hash: string
+          token_prefix: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_used_at?: string | null
+          name: string
+          revoked_at?: string | null
+          token_hash: string
+          token_prefix: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_used_at?: string | null
+          name?: string
+          revoked_at?: string | null
+          token_hash?: string
+          token_prefix?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_settings: {
         Row: {
           contribute_training: boolean
@@ -712,7 +817,23 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      check_upload_token: {
+        Args: { p_token: string }
+        Returns: string
+      }
+      ingest_slice: {
+        Args: {
+          p_duration_minutes: number | null
+          p_file_name: string
+          p_material_g: number | null
+          p_parsed: Json
+          p_printer_model: string | null
+          p_slicer: string | null
+          p_slicer_config: Json | null
+          p_token: string
+        }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

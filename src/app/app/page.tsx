@@ -3,7 +3,10 @@ import Link from 'next/link';
 import { InstallButton } from '@/components/install-button';
 import { requireUser } from '@/lib/auth';
 import { formatDuration } from '@/lib/duration';
+import { storedParse } from '@/lib/import-record';
 import { MACHINE_PRESETS, MATERIAL_PRESETS } from '@/lib/presets';
+import { Inbox, type InboxItem } from './inbox';
+import { inboxCutoffIso, resolveSetup } from '@/lib/inbox-match';
 
 export const metadata: Metadata = {
   title: 'Dashboard : SpoolStack',
@@ -14,7 +17,11 @@ export const metadata: Metadata = {
 export default async function DashboardPage() {
   const { supabase, userId } = await requireUser();
 
-  const [runs, machines, materials, projects, settings, parameterDefs, history] = await Promise.all([
+  // The inbox shows the last two weeks. Older entries are left alone, not
+  // deleted: they fold away instead of nagging.
+  const inboxSince = inboxCutoffIso();
+
+  const [runs, machines, materials, projects, settings, parameterDefs, history, pending, tokens, machineRows, materialRows] = await Promise.all([
     supabase.from('runs').select('*', { count: 'exact', head: true }),
     supabase.from('machines').select('*', { count: 'exact', head: true }).eq('is_active', true),
     supabase.from('materials').select('*', { count: 'exact', head: true }).eq('is_active', true),
@@ -27,11 +34,43 @@ export default async function DashboardPage() {
     supabase.from('parameter_defs').select('*', { count: 'exact', head: true }),
     // Summary inputs. Bounded: past a few thousand runs this moves into a SQL view.
     supabase.from('runs').select('outcome, duration_minutes, material_id, materials(name)').limit(5000),
+    supabase
+      .from('pending_runs')
+      .select('id, file_name, printer_model, duration_minutes, material_g, sliced_at, parsed')
+      .eq('status', 'pending')
+      .gte('sliced_at', inboxSince)
+      .order('sliced_at', { ascending: false })
+      .limit(10),
+    supabase.from('upload_tokens').select('*', { count: 'exact', head: true }).is('revoked_at', null),
+    supabase.from('machines').select('id, name, make, model, domain_id').eq('is_active', true),
+    supabase.from('materials').select('id, name, category, brand, domain_id').eq('is_active', true),
   ]);
 
-  const errors = [runs, machines, materials, projects, settings, parameterDefs, history]
+  const errors = [runs, machines, materials, projects, settings, parameterDefs, history, pending, tokens]
     .map((r) => r.error?.message)
     .filter((m): m is string => Boolean(m));
+
+  // One tap is offered only when the machine and material are certain.
+  const inboxItems: InboxItem[] = (pending.data ?? []).map((p) => {
+    const parsed = storedParse(p.parsed);
+    const { machine, material } = resolveSetup(
+      parsed.printerModel,
+      parsed.filamentType,
+      parsed.filamentBrand,
+      machineRows.data ?? [],
+      materialRows.data ?? [],
+    );
+    return {
+      id: p.id,
+      fileName: p.file_name,
+      printerModel: p.printer_model,
+      durationMinutes: p.duration_minutes,
+      materialG: p.material_g,
+      slicedAt: p.sliced_at,
+      setupLabel: machine && material ? `${machine.name}, ${material.name}` : null,
+    };
+  });
+  const uploaderConnected = (tokens.count ?? 0) > 0;
 
   const tiles = [
     { label: 'Runs logged', value: runs.count ?? 0, href: '/app/runs' },
@@ -156,6 +195,8 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      <Inbox items={inboxItems} />
+
       {setupFirst ? setupSection : null}
 
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
@@ -219,6 +260,19 @@ export default async function DashboardPage() {
       ) : null}
 
       {!setupFirst ? setupSection : null}
+
+      {!uploaderConnected && runCount > 0 ? (
+        <section className="rounded-lg border border-dashed border-black/20 p-5 text-sm dark:border-white/25">
+          <h2 className="font-semibold">Log prints without typing</h2>
+          <p className="mt-1 opacity-70">
+            Add a small script to your slicer and every file you slice shows up here, waiting for one tap: worked,
+            failed, or didn&rsquo;t print. Works with PrusaSlicer, OrcaSlicer and Bambu Studio.
+          </p>
+          <Link href="/app/settings/uploader" className="mt-3 inline-block font-medium underline underline-offset-2">
+            Connect your slicer
+          </Link>
+        </section>
+      ) : null}
 
       {/* M0 connection check, now shown only when it fails: zero readable
           parameter definitions means the schema or RLS is broken, and the run

@@ -19,7 +19,9 @@ export const config = {
      * files. The auth cookie has to be refreshed on real page and API
      * requests, not on every favicon fetch, and the service worker, manifest,
      * offline page, robots and sitemap must never be redirected to sign-in.
+     * /api/ingest is excluded too: the slicer uploader has no session, so a
+     * session refresh there is a wasted round trip on every slice.
      */
-    '/((?!_next/static|_next/image|favicon\\.ico|sw\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|sitemap\\.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    '/((?!_next/static|_next/image|api/ingest|favicon\\.ico|sw\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|sitemap\\.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 };
