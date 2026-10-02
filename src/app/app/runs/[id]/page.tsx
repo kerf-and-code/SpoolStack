@@ -9,6 +9,7 @@ import type { Json } from '@/lib/database.types';
 import { formatDuration } from '@/lib/duration';
 import { formatNumber } from '@/lib/format';
 import { PHOTO_BUCKET, PHOTOS_PER_RUN_LIMIT, defaultPhotoKind, isPhotoKind } from '@/lib/photos';
+import { diffParameters } from '@/lib/run-diff';
 import { deleteRun } from '../actions';
 import { PARAM_DEF_COLUMNS } from '../data';
 import { OutcomeBadge } from '../outcome-badge';
@@ -52,7 +53,7 @@ export default async function RunDetailPage({
   const { notice } = await searchParams;
   const { supabase, userId } = await requireUser();
 
-  const [{ data: run, error }, defectsRes, photosRes] = await Promise.all([
+  const [{ data: run, error }, defectsRes, photosRes, retriesRes, settingsRes] = await Promise.all([
     supabase
       .from('runs')
       .select('*, machines(name), materials(name, unit), projects(name)')
@@ -67,8 +68,27 @@ export default async function RunDetailPage({
       .select('id, storage_path, kind, defect_type_id')
       .eq('run_id', id)
       .order('created_at'),
+    // Later runs that say they retry this one.
+    supabase
+      .from('runs')
+      .select('id, title, outcome, completed_at, created_at')
+      .eq('retry_of_run_id', id)
+      .order('created_at'),
+    supabase.from('user_settings').select('contribute_training').eq('user_id', userId).maybeSingle(),
   ]);
   if (error || !run) notFound();
+
+  // The run this one retries, for the "what changed" comparison. RLS limits
+  // it to your own runs; the trigger makes sure it always is one.
+  const { data: parent } = run.retry_of_run_id
+    ? await supabase
+        .from('runs')
+        .select('id, title, outcome, completed_at, created_at, parameters, machine_id, material_id, machines(name), materials(name)')
+        .eq('id', run.retry_of_run_id)
+        .maybeSingle()
+    : { data: null };
+  const retries = retriesRes.data ?? [];
+  const contributing = settingsRes.data?.contribute_training ?? false;
 
   const [{ data: defs }, { data: defectTypes }] = await Promise.all([
     supabase.from('parameter_defs').select(PARAM_DEF_COLUMNS).eq('domain_id', run.domain_id).order('sort_order'),
@@ -126,6 +146,17 @@ export default async function RunDetailPage({
     label: d.display_name,
     onRun: runDefectIds.has(d.id),
   }));
+
+  const settingChanges = parent ? diffParameters(parent.parameters, run.parameters, defs ?? []) : [];
+  const setupChanges: { label: string; before: string; after: string }[] = [];
+  if (parent && parent.machine_id !== run.machine_id) {
+    setupChanges.push({ label: 'Machine', before: parent.machines?.name ?? 'none', after: run.machines?.name ?? 'none' });
+  }
+  if (parent && parent.material_id !== run.material_id) {
+    setupChanges.push({ label: 'Material', before: parent.materials?.name ?? 'none', after: run.materials?.name ?? 'none' });
+  }
+  const allChanges = [...setupChanges, ...settingChanges];
+  const failedish = run.outcome !== 'success';
 
   const meta = asObject(run.source_metadata);
   const metaText = (k: string) => (typeof meta[k] === 'string' ? (meta[k] as string) : null);
@@ -192,12 +223,28 @@ export default async function RunDetailPage({
             <span>{run.source === 'gcode_import' ? 'Imported from a slicer file' : 'Logged by hand'}</span>
           </p>
         </div>
-        <Link
-          href={`/app/runs/${run.id}/edit`}
-          className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background"
-        >
-          Edit
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={`/app/runs/new?retry=${run.id}`}
+            className={
+              failedish
+                ? 'rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background'
+                : 'rounded-lg border border-black/20 px-4 py-2 text-sm font-medium hover:bg-black/5 dark:border-white/25 dark:hover:bg-white/10'
+            }
+          >
+            Log a retry
+          </Link>
+          <Link
+            href={`/app/runs/${run.id}/edit`}
+            className={
+              failedish
+                ? 'rounded-lg border border-black/20 px-4 py-2 text-sm font-medium hover:bg-black/5 dark:border-white/25 dark:hover:bg-white/10'
+                : 'rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background'
+            }
+          >
+            Edit
+          </Link>
+        </div>
       </div>
 
       {noticeInfo ? <Notice tone={noticeInfo.tone}>{noticeInfo.text}</Notice> : null}
@@ -211,6 +258,66 @@ export default async function RunDetailPage({
         ))}
       </dl>
 
+      {parent || retries.length > 0 ? (
+        <section className="mt-8 rounded-lg border border-black/10 p-5 dark:border-white/15" id="retries">
+          {parent ? (
+            <>
+              <h2 className="font-semibold">Retry of an earlier run</h2>
+              <p className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+                <Link href={`/app/runs/${parent.id}`} className="underline underline-offset-2">
+                  {parent.title || parent.materials?.name || 'Untitled run'}
+                </Link>
+                <OutcomeBadge outcome={parent.outcome} />
+                <span className="opacity-70">
+                  <LocalTime iso={parent.completed_at ?? parent.created_at} />
+                </span>
+              </p>
+              {run.retry_change_note ? (
+                <p className="mt-3 text-sm">
+                  <span className="opacity-60">What you changed: </span>
+                  <span className="whitespace-pre-wrap">{run.retry_change_note}</span>
+                </p>
+              ) : null}
+              <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide opacity-55">Recorded differences</h3>
+              {allChanges.length === 0 ? (
+                <p className="mt-1 text-sm opacity-65">
+                  No recorded setting differs. If something did change, add it under Edit so the comparison can see it.
+                </p>
+              ) : (
+                <ul className="mt-1 space-y-1 text-sm">
+                  {allChanges.map((c) => (
+                    <li key={c.label} className="flex flex-wrap gap-x-2">
+                      <span className="opacity-70">{c.label}:</span>
+                      <span className="tabular-nums">
+                        {c.before} &rarr; <span className="font-medium">{c.after}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : null}
+          {retries.length > 0 ? (
+            <div className={parent ? 'mt-5 border-t border-black/10 pt-4 dark:border-white/15' : ''}>
+              <h2 className="font-semibold">Retried as</h2>
+              <ul className="mt-2 space-y-1.5 text-sm">
+                {retries.map((r) => (
+                  <li key={r.id} className="flex flex-wrap items-center gap-2">
+                    <Link href={`/app/runs/${r.id}`} className="underline underline-offset-2">
+                      {r.title || 'Untitled run'}
+                    </Link>
+                    <OutcomeBadge outcome={r.outcome} />
+                    <span className="opacity-70">
+                      <LocalTime iso={r.completed_at ?? r.created_at} />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
       <section className="mt-8" id="photos">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="font-semibold">Photos</h2>
@@ -221,6 +328,14 @@ export default async function RunDetailPage({
         <p className="mt-1 text-sm opacity-65">
           A shot of the whole print, and a close-up of anything that went wrong. Tagging the defect each photo shows
           is what will teach SpoolStack to spot it later.
+        </p>
+        <p className="mt-1 text-xs opacity-60">
+          {contributing
+            ? 'You are sharing your photos, labels and settings to help train diagnosis. '
+            : 'Private to your account. Diagnosis training is off. '}
+          <Link href="/app/settings#contribute" className="underline underline-offset-2">
+            {contributing ? 'Change' : 'About sharing'}
+          </Link>
         </p>
         <div className="mt-3">
           <PhotoUploader

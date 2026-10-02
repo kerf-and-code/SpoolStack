@@ -389,12 +389,12 @@ The end state: photograph a finished print. A success is logged with its setting
 
 Ground rules carried over: diagnosis ("that is stringing") and recommendation ("drop 5 C") are built and tested separately; nothing promises a successful print, only the most likely fix with its evidence; a retry is linked to the run it retries, or the loop cannot learn whether a fix worked.
 
-#### Stage 0, collect (now)
+#### Stage 0, collect (built; data collection is ongoing)
 
 - **Photos on runs,** with a shot type and a defect label per photo. **Built 2026-09-25.**
-- **"Retry of" link** on a run, recording what changed from the run it retries.
-- **Full slicer config,** the raw settings block, stored alongside the 21 mapped settings, so later stages can learn from settings nobody has mapped yet.
-- **Contribute opt-in,** off by default: "Use my photos, labels and run settings to improve diagnosis for everyone." The privacy page says photos are private to the account, so no photo is used for training without this switch, and switching it off removes that account's data from the next training set. The privacy page gets a paragraph saying exactly this. Needed before any public post that mentions the dataset.
+- **"Retry of" link** on a run, recording what changed from the run it retries. **Built 2026-10-01.**
+- **Full slicer config,** the raw settings block, stored alongside the 21 mapped settings, so later stages can learn from settings nobody has mapped yet. **Built 2026-10-01.**
+- **Contribute opt-in,** off by default: "Use my photos, labels and run settings to improve diagnosis for everyone." The privacy page says photos are private to the account, so no photo is used for training without this switch, and switching it off removes that account's data from the next training set. The privacy page gets a paragraph saying exactly this. Needed before any public post that mentions the dataset. **Built 2026-10-01.**
 
 #### Stage 1, capture without typing
 
@@ -467,6 +467,12 @@ Opted-in pooled data retrains the model and each release ships to everyone. Loca
 
 **Stage 0 photos, as built:** a private Storage bucket `run-photos` and a `run_photos` table (`db/run_photos.sql`, also folded into `db/schema.sql` as section 9). Files sit at `<user>/<run>/<photo>.jpg`; Storage policies allow only your own folder and your own runs, and the table's RLS re-checks the parent run because foreign-key checks bypass RLS. Photos are shrunk to 2048px on the device and re-encoded, which also strips EXIF location. Each photo has a kind (whole print, close-up, first layer, where it failed, other) and at most one defect label, one tap each. Saving a new run now opens that run's page so photos can be added straight away. Deleting a run or a photo removes the files as well as the rows. `runs.photos` and `run_defects.photo_path` are superseded but left in place. `db/run_photos.sql` ran on the live project on 2026-09-25 and checked out: the bucket is private with a 10 MB cap and image types only, 7 policies are in place, and RLS is on.
 
+**Stage 0 continued, as built (2026-10-01):** `db/stage0.sql`, also folded into `db/schema.sql` as section 10.
+
+- **Retry link.** `runs.retry_of_run_id` (set null if the original is deleted) and `runs.retry_change_note` (500 characters). A trigger, not a policy, enforces that a retry points at one of your own runs: a policy on `runs` that queries `runs` is infinite recursion in Postgres, and foreign-key checks bypass RLS. Every run page has **Log a retry**, primary on a failed, partial or aborted run. It opens the run form prefilled from that run, with a banner naming it and a "What did you change, and why?" box. The retry's page shows the original, the note, and the recorded differences (machine, material and every setting, computed by `src/lib/run-diff.ts`, not stored). The original's page lists its retries with their outcomes. This is the data Stage 4 scores its suggestions on.
+- **Full slicer config.** `runs.slicer_config`, every named setting from the file's config block (`src/lib/slicer-config.ts`): Bambu and Orca `CONFIG_BLOCK`, Prusa and SuperSlicer `*_config = begin/end`. Cura's JSON blob is not read yet. Left out: custom G-code templates, and anything that could hold a password, printer address or disk path. A real A1 export keeps 549 settings in 17 KB, against 566 in 42 KB raw. Capped at 100 KB in the app and 128 KB by a database check. A damaged field is dropped rather than blocking the save.
+- **Contribute opt-in.** `user_settings.contribute_training`, off by default, with the time it last changed. A switch in Settings that saves the moment it changes, a one-line status under every run's photos, and a "Diagnosis training" section on the privacy page. Being honest about one limit: switching off leaves the account out of every future training set, but a model already trained is not rebuilt to remove one account.
+
 ### Competitors (checked 2026-09-25)
 
 | Product | What it does | Free? |
@@ -487,8 +493,8 @@ Opted-in pooled data retrains the model and each release ships to everyone. Loca
 1. ~~Commit M4 and M5, M4 exit test, phone install, connect `spool-stack.com`.~~ Done 2026-09-23.
 2. **Add `RESEND_API_KEY`** to the SpoolStack Vercel project so the contact form sends.
 3. **Search Console and Bing verification,** then submit `https://spool-stack.com/sitemap.xml`.
-4. ~~Run `db/run_photos.sql` on the live project.~~ Done and verified 2026-09-25. Next: the first live photo upload test, then photograph every print during the dogfood.
+4. ~~Run `db/run_photos.sql` on the live project.~~ Done and verified 2026-09-25. **The first live photo upload test is still to do,** then photograph every print during the dogfood.
 5. **The two-week dogfood** that closes Phase 1. Stopwatch targets from M2 still to record: under 60 seconds fresh, under 20 seconds repeat.
-6. **Stage 0 continued:** retry link, full slicer config, and the contribute opt-in with its privacy page paragraph.
+6. ~~Stage 0 continued: retry link, full slicer config, contribute opt-in.~~ Built 2026-10-01. Run `db/stage0.sql` on the live project before deploying.
 7. **Stage 1 first slice:** the slicer uploader, `/api/ingest` with upload tokens, and the "Did it print?" inbox.
 8. **Revise the FAQ answer** that says photo diagnosis might be paid one day. Under the rule above it will be free, because it runs on the device.

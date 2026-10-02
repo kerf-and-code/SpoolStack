@@ -54,6 +54,24 @@ export interface RecentRun {
   parameters: Json;
 }
 
+/** The run a retry points at, as shown in the form's retry banner. */
+export interface RetryOf {
+  id: string;
+  /** Title, else material name, else "untitled run". */
+  label: string;
+  outcome: Outcome;
+  finishedIso: string;
+}
+
+/**
+ * Retry mode for the run form. On a new run, `source` prefills the form from
+ * the run being retried. On an edit, only the banner and the note are shown.
+ */
+export interface RetryContext {
+  of: RetryOf;
+  source: RecentRun | null;
+}
+
 /** Prefill for editing an existing run. Built on the server from the stored row. */
 export interface RunEditInitial {
   runId: string;

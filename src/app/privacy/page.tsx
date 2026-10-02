@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 // Written to match what the code actually does. If a feature changes
 // what is collected (photos, analytics, error reporting, payments), this page
 // changes in the same commit.
-const UPDATED = 'September 25, 2026';
+const UPDATED = 'October 1, 2026';
 
 export default function PrivacyPage() {
   return (
@@ -37,17 +37,33 @@ export default function PrivacyPage() {
             <ul>
               <li>Your email address, used to sign you in. If you sign in with Google, Google shares your email address and basic profile with us for that purpose.</li>
               <li>The records you create: machines, materials, projects, runs, defects, notes and settings such as your currency and electricity rate.</li>
-              <li>Print settings pulled from a slicer file when you use import, such as layer height, temperatures and filament used.</li>
-              <li>Photos you add to runs, with the labels you give them. Each photo is shrunk on your device and its location data is removed before upload. Photos are stored privately and only your account can see them.</li>
+              <li>Print settings pulled from a slicer file when you use import: the ones shown in the form, such as layer height, temperatures and filament used, and every other named setting in the file (several hundred on most files). Custom start and end G-code, and anything that could hold a password, a printer address or a path on your computer, are left out.</li>
+              <li>Photos you add to runs, with the labels you give them. Each photo is shrunk on your device and its location data is removed before upload. Photos are stored privately and only your account can see them, unless you switch on diagnosis training, below.</li>
+              <li>Which run a retry is a retry of, and what you say you changed.</li>
             </ul>
           </section>
 
           <section>
             <h2>What is not stored</h2>
             <ul>
-              <li>Slicer files. When you import a .gcode or .3mf file it is read in your browser and only the values shown in the form are saved. The file itself never leaves your device.</li>
+              <li>Slicer files. When you import a .gcode or .3mf file it is read in your browser and only its settings are saved. The file itself, and the model in it, never leave your device.</li>
               <li>Payment details. {SITE_NAME} does not take payments.</li>
               <li>Tracking data. There are no analytics, advertising or social media scripts on this site.</li>
+            </ul>
+          </section>
+
+          <section id="training">
+            <h2>Diagnosis training (off unless you switch it on)</h2>
+            <p>
+              {SITE_NAME} is building a model that spots print defects from a photo. It runs on your device, not on
+              an AI service. It learns from real prints, so there is a switch in Settings, off by default, to share
+              yours.
+            </p>
+            <ul>
+              <li>When it is on, Kerf and Code may use the photos you add to runs, the defect labels you give them and the settings of those runs to train and test the model.</li>
+              <li>They are never published, sold or shared, and the model that ships contains no photos.</li>
+              <li>When it is off, nothing of yours is used. Switching it off leaves your data out of every training set built from then on. A model already trained is not rebuilt just to remove one account.</li>
+              <li>Deleting a photo or a run removes it from future training sets too.</li>
             </ul>
           </section>
 

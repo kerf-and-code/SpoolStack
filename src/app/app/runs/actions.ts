@@ -18,6 +18,7 @@ import {
 } from '@/lib/forms';
 import { PHOTO_BUCKET } from '@/lib/photos';
 import { parseParameterFields } from '@/lib/run-params';
+import { sanitizeSlicerConfig } from '@/lib/slicer-config';
 import type { ServerClient } from '@/lib/supabase/server';
 import { OUTCOMES } from './types';
 
@@ -43,6 +44,7 @@ const runSchema = z.object({
   quality_rating: optionalNumber('Quality', { min: 1, max: 5, integer: true }),
   active_labor_minutes: optionalNumber('Hands-on time', { min: 0, max: 43_200 }),
   notes: optionalText('Notes', 4000),
+  retry_change_note: optionalText('What you changed', 500),
 });
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -70,7 +72,7 @@ interface RunFields {
 
 type Validated =
   | { ok: false; state: FormState }
-  | { ok: true; fields: RunFields; defects: DefectRow[]; completedAt: string | null };
+  | { ok: true; fields: RunFields; defects: DefectRow[]; completedAt: string | null; retryNote: string | null };
 
 /**
  * Everything a create and an edit have in common: parse, check ownership and
@@ -179,6 +181,7 @@ async function validateRun(supabase: ServerClient, formData: FormData): Promise<
     ok: true,
     completedAt,
     defects,
+    retryNote: v.retry_change_note,
     fields: {
       domain_id: domainId,
       machine_id: v.machine_id,
@@ -229,6 +232,31 @@ export async function saveRun(_prev: FormState, formData: FormData): Promise<For
     if (!ok) return errorState('The imported file data was damaged. Import the file again.');
   }
 
+  // Every named setting from the file. Auxiliary: a damaged or oversized
+  // field is dropped rather than blocking the log.
+  let slicerConfig: Record<string, string> | null = null;
+  if (source === 'gcode_import') {
+    const rawConfig = String(formData.get('slicer_config') ?? '');
+    if (rawConfig.length > 0 && rawConfig.length <= 400_000) {
+      try {
+        slicerConfig = sanitizeSlicerConfig(JSON.parse(rawConfig));
+      } catch {
+        slicerConfig = null;
+      }
+    }
+  }
+
+  // A retry points at one of your own runs. The database trigger enforces
+  // the same rule; checking here gives a sentence instead of an error code.
+  const retryRaw = String(formData.get('retry_of_run_id') ?? '').trim();
+  let retryOf: string | null = null;
+  if (retryRaw !== '') {
+    if (!UUID.test(retryRaw)) return errorState('The run this retries is not valid. Open it and press Log a retry again.');
+    const { data: parent } = await supabase.from('runs').select('id').eq('id', retryRaw).maybeSingle();
+    if (!parent) return errorState('The run this retries no longer exists. Save it as a new run instead.');
+    retryOf = parent.id;
+  }
+
   const { data: inserted, error: insertError } = await supabase
     .from('runs')
     .insert({
@@ -237,6 +265,9 @@ export async function saveRun(_prev: FormState, formData: FormData): Promise<For
       completed_at: result.completedAt ?? new Date().toISOString(),
       source,
       source_metadata: sourceMetadata,
+      slicer_config: slicerConfig,
+      retry_of_run_id: retryOf,
+      retry_change_note: retryOf ? result.retryNote : null,
     })
     .select('id')
     .single();
@@ -282,7 +313,13 @@ export async function updateRun(runId: string, _prev: FormState, formData: FormD
 
   const { data: updated, error: updateError } = await supabase
     .from('runs')
-    .update({ ...result.fields, ...(result.completedAt ? { completed_at: result.completedAt } : {}) })
+    .update({
+      ...result.fields,
+      ...(result.completedAt ? { completed_at: result.completedAt } : {}),
+      // Only a retry's edit form shows the note. The link itself is never
+      // changed by an edit.
+      ...(formData.has('retry_change_note') ? { retry_change_note: result.retryNote } : {}),
+    })
     .eq('id', runId)
     .select('id');
   if (updateError) return errorState(dbErrorMessage(updateError, 'run'));

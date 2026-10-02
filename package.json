@@ -14,7 +14,9 @@
     "test:presets": "node --experimental-strip-types src/lib/presets.test.ts",
     "test:costing": "node --experimental-strip-types src/lib/costing.test.ts && node --experimental-strip-types src/lib/cost-calculator.test.ts",
     "test:contact": "node --experimental-strip-types src/lib/contact.test.ts",
-    "test:photos": "node --experimental-strip-types src/lib/photos.test.ts"
+    "test:photos": "node --experimental-strip-types src/lib/photos.test.ts",
+    "test:slicer-config": "node --experimental-strip-types src/lib/slicer-config.test.ts",
+    "test:run-diff": "node --experimental-strip-types src/lib/run-diff.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

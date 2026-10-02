@@ -477,6 +477,9 @@ export type Database = {
           photos: string[]
           project_id: string | null
           quality_rating: number | null
+          retry_change_note: string | null
+          retry_of_run_id: string | null
+          slicer_config: Json | null
           source: string
           source_metadata: Json
           started_at: string | null
@@ -504,6 +507,9 @@ export type Database = {
           photos?: string[]
           project_id?: string | null
           quality_rating?: number | null
+          retry_change_note?: string | null
+          retry_of_run_id?: string | null
+          slicer_config?: Json | null
           source?: string
           source_metadata?: Json
           started_at?: string | null
@@ -531,6 +537,9 @@ export type Database = {
           photos?: string[]
           project_id?: string | null
           quality_rating?: number | null
+          retry_change_note?: string | null
+          retry_of_run_id?: string | null
+          slicer_config?: Json | null
           source?: string
           source_metadata?: Json
           started_at?: string | null
@@ -570,10 +579,19 @@ export type Database = {
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "runs_retry_of_run_id_fkey"
+            columns: ["retry_of_run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
         ]
       }
       user_settings: {
         Row: {
+          contribute_training: boolean
+          contribute_training_changed_at: string | null
           created_at: string
           currency: string
           default_domain_id: string | null
@@ -586,6 +604,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          contribute_training?: boolean
+          contribute_training_changed_at?: string | null
           created_at?: string
           currency?: string
           default_domain_id?: string | null
@@ -598,6 +618,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          contribute_training?: boolean
+          contribute_training_changed_at?: string | null
           created_at?: string
           currency?: string
           default_domain_id?: string | null

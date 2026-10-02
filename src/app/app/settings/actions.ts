@@ -53,3 +53,26 @@ export async function saveSettings(_prev: FormState, formData: FormData): Promis
   revalidatePath('/app', 'layout');
   return { status: 'saved', message: 'Settings saved. Costs everywhere use the new rates.' };
 }
+
+/**
+ * The diagnosis-training switch. Saved on its own, the moment it is changed,
+ * so it never rides along with a rates edit. The upsert names only these two
+ * columns, so on an existing row nothing else is touched.
+ */
+export async function saveContribute(on: boolean): Promise<{ ok: true; on: boolean } | { ok: false; message: string }> {
+  const { supabase, userId } = await requireUser();
+  if (typeof on !== 'boolean') return { ok: false, message: 'That setting was not understood. Reload and try again.' };
+
+  const { data, error } = await supabase
+    .from('user_settings')
+    .upsert(
+      { user_id: userId, contribute_training: on, contribute_training_changed_at: new Date().toISOString() },
+      { onConflict: 'user_id' },
+    )
+    .select('contribute_training');
+  if (error) return { ok: false, message: dbErrorMessage(error, 'setting') };
+  if (!data || data.length === 0) return { ok: false, message: 'The setting did not save. Try again.' };
+
+  revalidatePath('/app', 'layout');
+  return { ok: true, on: data[0].contribute_training };
+}

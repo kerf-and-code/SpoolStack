@@ -24,6 +24,7 @@ import { startTransition, useActionState, useMemo, useState, useSyncExternalStor
 import { LocalTime } from '@/components/local-time';
 import { formatDuration, parseDurationMinutes } from '@/lib/duration';
 import { readSlicedFile, titleFromFileName } from '@/lib/gcode-file';
+import { extractSlicerConfig } from '@/lib/slicer-config';
 import { parseGcode, validateParameters, type ParameterDef } from '@/lib/gcodeParse';
 import { idleState, type FormState } from '@/lib/forms';
 import { matchMachines, matchMaterial } from '@/lib/import-match';
@@ -36,6 +37,7 @@ import {
   type MachineOption,
   type Outcome,
   type RecentRun,
+  type RetryContext,
   type RunEditInitial,
   type RunFormData,
 } from './types';
@@ -71,16 +73,45 @@ function bestMatch(runs: RecentRun[], machineId: string, materialId: string): Re
   );
 }
 
+/** Every parameter field set to blank, so a copy or import never mixes with values already there. */
+function blankParamsFor(defs: ParamDefRow[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const d of defs) out[PARAM_PREFIX + d.key] = '';
+  return out;
+}
+
+/** The form values a previous run supplies: what copy-from-last and a retry both reuse. */
+function valuesFromRun(run: RecentRun, defs: ParamDefRow[], projectIds: Set<string>): Record<string, string> {
+  return {
+    project_id: run.project_id && projectIds.has(run.project_id) ? run.project_id : '',
+    title: run.title ?? '',
+    duration: run.duration_minutes !== null ? formatDuration(run.duration_minutes) : '',
+    material_qty_used: run.material_qty_used !== null ? String(run.material_qty_used) : '',
+    units_produced: String(run.units_produced),
+    active_labor_minutes: run.active_labor_minutes > 0 ? String(run.active_labor_minutes) : '',
+    // Cleared first: a setting typed before copying must not survive into a
+    // record that now claims to be that run's settings.
+    ...blankParamsFor(defs),
+    ...parametersToFields(run.parameters, defs),
+    // Deliberately NOT copied: outcome, defects, quality, notes, finish time.
+    // Those describe this run, and copying them would quietly repeat last
+    // time's result into this one.
+  };
+}
+
 export function RunForm({
   data,
   action = saveRun,
   initial,
+  retry,
 }: {
   data: RunFormData;
   /** Server action: saveRun for a new run, updateRun bound to an id for an edit. */
   action?: RunAction;
   /** Present when editing an existing run. */
   initial?: RunEditInitial;
+  /** Present when this run retries another: a new retry, or editing one. */
+  retry?: RetryContext;
 }) {
   const { machines, materials, projects, parameterDefs, defectTypes, recentRuns } = data;
   const editing = initial !== undefined;
@@ -88,9 +119,11 @@ export function RunForm({
   const errors = state.status === 'error' ? state.fieldErrors : {};
 
   const last = recentRuns[0] ?? null;
+  // A new retry starts from the run it retries, not from the latest run.
+  const retrySource = !editing ? (retry?.source ?? null) : null;
   const [values, setValues] = useState<Record<string, string>>(() => ({
-    machine_id: pickDefault(machines.map((m) => m.id), last?.machine_id),
-    material_id: pickDefault(materials.map((m) => m.id), last?.material_id),
+    machine_id: pickDefault(machines.map((m) => m.id), retrySource ? retrySource.machine_id : last?.machine_id),
+    material_id: pickDefault(materials.map((m) => m.id), retrySource ? retrySource.material_id : last?.material_id),
     project_id: '',
     title: '',
     outcome: '',
@@ -102,6 +135,8 @@ export function RunForm({
     active_labor_minutes: '',
     quality_rating: '',
     notes: '',
+    retry_change_note: '',
+    ...(retrySource ? valuesFromRun(retrySource, parameterDefs, new Set(projects.map((p) => p.id))) : {}),
     ...(initial?.values ?? {}),
   }));
   const [weighed, setWeighed] = useState(initial?.weighed ?? false);
@@ -166,12 +201,7 @@ export function RunForm({
 
   const candidate = bestMatch(recentRuns, values.machine_id, values.material_id);
 
-  /** Every parameter field set to blank, so a copy or import never mixes with values already there. */
-  function blankParams(): Record<string, string> {
-    const out: Record<string, string> = {};
-    for (const d of parameterDefs) out[PARAM_PREFIX + d.key] = '';
-    return out;
-  }
+  const blankParams = () => blankParamsFor(parameterDefs);
 
   function copyFrom(run: RecentRun) {
     setValues((prev) => ({
@@ -179,19 +209,7 @@ export function RunForm({
       // Keep a machine or material already chosen; fill them only if empty.
       machine_id: prev.machine_id || (run.machine_id && machineList.some((m) => m.id === run.machine_id) ? run.machine_id : ''),
       material_id: prev.material_id || (run.material_id && materials.some((m) => m.id === run.material_id) ? run.material_id : ''),
-      project_id: run.project_id && projects.some((p) => p.id === run.project_id) ? run.project_id : '',
-      title: run.title ?? '',
-      duration: run.duration_minutes !== null ? formatDuration(run.duration_minutes) : '',
-      material_qty_used: run.material_qty_used !== null ? String(run.material_qty_used) : '',
-      units_produced: String(run.units_produced),
-      active_labor_minutes: run.active_labor_minutes > 0 ? String(run.active_labor_minutes) : '',
-      // Cleared first: a setting typed before copying must not survive into a
-      // record that now claims to be last run's settings.
-      ...blankParams(),
-      ...parametersToFields(run.parameters, parameterDefs),
-      // Deliberately NOT copied: outcome, defects, quality, notes, finish time.
-      // Those describe this run, and copying them would quietly repeat last
-      // time's result into this one.
+      ...valuesFromRun(run, parameterDefs, new Set(projects.map((p) => p.id))),
     }));
     setWeighed(false);
     setCopiedFrom(run);
@@ -210,6 +228,7 @@ export function RunForm({
         return;
       }
       const parsed = parseGcode(read.text);
+      const slicerConfig = extractSlicerConfig(read.text);
 
       // Gcode is FDM. Validate against the FDM dictionary, and drop anything
       // clamped: an out-of-range value from a file is shown, not stored.
@@ -288,6 +307,8 @@ export function RunForm({
         materialSource: parsed.materialSource,
         unit: materials.find((m) => m.id === materialId)?.unit ?? 'g',
         settingsFilled: Object.keys(paramFields).length,
+        configCount: slicerConfig.config ? Object.keys(slicerConfig.config).length : 0,
+        configJson: slicerConfig.config ? JSON.stringify(slicerConfig.config) : null,
         outOfRange,
         notes,
         machine: machineStatus,
@@ -302,6 +323,8 @@ export function RunForm({
           filament_type: parsed.filamentType,
           filament_brand: parsed.filamentBrand,
           material_source: parsed.materialSource,
+          config_format: slicerConfig.format,
+          config_skipped: slicerConfig.skipped,
           raw: parsed.raw,
           notes,
           clamped: validation.clamped,
@@ -362,10 +385,23 @@ export function RunForm({
   return (
     <form onSubmit={onSubmit} noValidate className="pb-28">
       <input type="hidden" name="domain_id" value={domainId} />
+      {/* ------------------------------------------------------ retry banner */}
+      {retry ? (
+        <RetryBanner
+          retry={retry}
+          editing={editing}
+          mounted={mounted}
+          note={values.retry_change_note}
+          onNote={(v) => set('retry_change_note', v)}
+          error={errors.retry_change_note}
+        />
+      ) : null}
+
       {editing ? null : (
         <>
           <input type="hidden" name="source" value={imported ? 'gcode_import' : 'manual'} />
           {imported ? <input type="hidden" name="source_metadata" value={imported.metadataJson} /> : null}
+          {imported?.configJson ? <input type="hidden" name="slicer_config" value={imported.configJson} /> : null}
 
           {/* --------------------------------------------- import from file */}
           <ImportPanel
@@ -380,7 +416,7 @@ export function RunForm({
       )}
 
       {/* ------------------------------------------------ copy from last run */}
-      {candidate && !editing ? (
+      {candidate && !editing && !retry ? (
         <div className="mb-8 flex flex-wrap items-center gap-3 rounded-lg border border-black/10 bg-black/[0.03] p-3 dark:border-white/15 dark:bg-white/5">
           <button
             type="button"
@@ -764,6 +800,67 @@ export function RunForm({
 }
 
 // ---------------------------------------------------------------------------
+
+const RETRY_OUTCOME_TEXT: Record<Outcome, string> = {
+  success: 'worked',
+  partial: 'partly worked',
+  failure: 'failed',
+  aborted: 'was stopped',
+};
+
+function RetryBanner({
+  retry,
+  editing,
+  mounted,
+  note,
+  onNote,
+  error,
+}: {
+  retry: RetryContext;
+  editing: boolean;
+  mounted: boolean;
+  note: string;
+  onNote: (value: string) => void;
+  error?: string;
+}) {
+  const when = mounted
+    ? new Date(retry.of.finishedIso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    : null;
+  return (
+    <div className="mb-8 rounded-lg border border-black/10 bg-black/[0.03] p-4 dark:border-white/15 dark:bg-white/5">
+      {editing ? null : <input type="hidden" name="retry_of_run_id" value={retry.of.id} />}
+      <p className="text-sm">
+        <span className="font-semibold">Retry of </span>
+        <Link href={`/app/runs/${retry.of.id}`} className="underline underline-offset-2">
+          {retry.of.label}
+        </Link>
+        {when ? <>, {when}</> : null}, which {RETRY_OUTCOME_TEXT[retry.of.outcome]}.
+      </p>
+      {editing ? null : (
+        <p className="mt-1 text-sm opacity-70">
+          Its settings are filled in below. Change the ones you changed, or import the new file. SpoolStack works out
+          the differences when you save.
+        </p>
+      )}
+      <label htmlFor="retry_change_note" className="mt-4 mb-1.5 block text-sm font-medium">
+        What did you change, and why?
+      </label>
+      <textarea
+        id="retry_change_note"
+        name="retry_change_note"
+        rows={2}
+        maxLength={500}
+        placeholder="Dropped the nozzle 5 C for stringing, added a brim for the lifted corner"
+        value={note}
+        onChange={(e) => onNote(e.target.value)}
+        className={inputClass}
+        aria-invalid={error ? true : undefined}
+      />
+      <p className="mt-1 text-xs opacity-60">Optional. The why is the part the settings cannot record.</p>
+      {error ? <ErrorText>{error}</ErrorText> : null}
+    </div>
+  );
+}
 
 function Field({
   label,

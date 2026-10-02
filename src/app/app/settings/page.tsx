@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/page-header';
 import { requireUser } from '@/lib/auth';
 import { inputValue } from '@/lib/format';
 import { saveSettings } from './actions';
+import { ContributeToggle } from './contribute-toggle';
 
 export const metadata: Metadata = { title: 'Settings : SpoolStack' };
 
@@ -85,6 +86,10 @@ export default async function SettingsPage() {
     <div className="max-w-2xl">
       <PageHeader title="Settings" description="The rates every cost in SpoolStack is calculated from." />
       <EntityForm action={saveSettings} groups={groups} submitLabel="Save settings" />
+      <ContributeToggle
+        initial={settings?.contribute_training ?? false}
+        changedAtIso={settings?.contribute_training_changed_at ?? null}
+      />
     </div>
   );
 }

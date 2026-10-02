@@ -35,6 +35,10 @@ export interface ImportSummary {
   materialSource: 'stated_grams' | 'from_volume' | 'from_length' | null;
   unit: string;
   settingsFilled: number;
+  /** Every named setting in the file's config block, kept for later stages. 0 when the file has none. */
+  configCount: number;
+  /** JSON for runs.slicer_config, or null. */
+  configJson: string | null;
   /** Values outside the dictionary's range. Left blank in the form, never clamped in. */
   outOfRange: { label: string; value: number; range: string }[];
   notes: string[];
@@ -159,6 +163,7 @@ function Summary({
         <li>
           <span className="opacity-60">Settings: </span>
           {s.settingsFilled} filled in under Settings used
+          {s.configCount > 0 ? <>, and {s.configCount} slicer settings kept with the run</> : null}
         </li>
         <li>
           <span className="opacity-60">Machine: </span>

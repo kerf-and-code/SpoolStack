@@ -5,7 +5,7 @@ import { requireUser } from '@/lib/auth';
 import { formatDurationForInput } from '@/lib/duration';
 import { parametersToFields } from '@/lib/run-params';
 import { updateRun } from '../../actions';
-import { loadRunFormData } from '../../data';
+import { loadRetryContext, loadRunFormData } from '../../data';
 import { RunForm } from '../../run-form';
 import type { RunEditInitial } from '../../types';
 
@@ -24,11 +24,14 @@ export default async function EditRunPage({ params }: { params: Promise<{ id: st
   // A malformed id is a Postgres cast error, another user's id is no row (RLS).
   if (error || !run) notFound();
 
-  const data = await loadRunFormData(supabase, {
-    machineId: run.machine_id,
-    materialId: run.material_id,
-    projectId: run.project_id,
-  });
+  const [data, retryContext] = await Promise.all([
+    loadRunFormData(supabase, {
+      machineId: run.machine_id,
+      materialId: run.material_id,
+      projectId: run.project_id,
+    }),
+    loadRetryContext(supabase, run.retry_of_run_id, false),
+  ]);
 
   const defects: Record<number, string> = {};
   for (const d of defectsRes.data ?? []) defects[d.defect_type_id] = str(d.severity);
@@ -51,6 +54,7 @@ export default async function EditRunPage({ params }: { params: Promise<{ id: st
       active_labor_minutes: run.active_labor_minutes > 0 ? str(run.active_labor_minutes) : '',
       quality_rating: str(run.quality_rating),
       notes: str(run.notes),
+      retry_change_note: str(run.retry_change_note),
       ...parametersToFields(run.parameters, data.parameterDefs),
     },
   };
@@ -58,7 +62,12 @@ export default async function EditRunPage({ params }: { params: Promise<{ id: st
   return (
     <div className="max-w-3xl">
       <PageHeader title="Edit run" back={{ href: `/app/runs/${run.id}`, label: 'Back to run' }} />
-      <RunForm data={data} action={updateRun.bind(null, run.id)} initial={initial} />
+      <RunForm
+        data={data}
+        action={updateRun.bind(null, run.id)}
+        initial={initial}
+        retry={retryContext ?? undefined}
+      />
     </div>
   );
 }
