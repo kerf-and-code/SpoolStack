@@ -40,7 +40,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 DEFAULT_ENDPOINT = "https://spool-stack.com/api/ingest"
 
 HOME = Path(os.environ.get("SPOOLSTACK_HOME") or (Path.home() / ".spoolstack"))
@@ -58,6 +58,11 @@ TOKEN_RE = re.compile(r"^ssk_[A-Za-z0-9_-]{40,64}$")
 # Comment lines hold every slicer's metadata; M104/M109/M140/M190 are Cura's
 # only record of temperatures. Same rule as the app's own import.
 KEEP_RE = re.compile(r"^\s*(;|M1(04|09|40|90)\b)", re.IGNORECASE)
+# Bambu Studio slices into a temporary copy of the project, as
+# <project temp folder>\Metadata\.<process id>.<plate index>.gcode, with the
+# plate index counted from 0. It does not pass the export name to scripts.
+BAMBU_TEMP_RE = re.compile(r"^\.\d+\.(\d+)\.gcode$", re.IGNORECASE)
+NAME_MAX = 200
 
 
 # --------------------------------------------------------------------------
@@ -132,12 +137,66 @@ def is_binary_gcode(path):
         return f.read(4) == b"GCDE"
 
 
+def read_first_line(path):
+    """First non-blank line of a small text file, or "" if there is none."""
+    raw = Path(path).read_bytes()[:4096]
+    for encoding in ("utf-8-sig", "mbcs", "latin-1"):
+        try:
+            text = raw.decode(encoding)
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+    else:
+        return ""
+    for line in text.splitlines():
+        if line.strip():
+            return line.strip()
+    return ""
+
+
+def bambu_name(path):
+    """
+    Bambu Studio's own export name, "<project>_plate_<n>.gcode", rebuilt from
+    its temporary project folder: origin.txt there holds the path of the
+    project file that was opened. None when the file is not a Bambu temporary
+    file or the project was never saved (no origin to name it after).
+    """
+    p = Path(path)
+    m = BAMBU_TEMP_RE.match(p.name)
+    if not m:
+        return None
+    try:
+        origin = read_first_line(p.parent.parent / "origin.txt")
+    except OSError:
+        return None
+    base = re.split(r"[\\/]", origin)[-1]
+    lower = base.lower()
+    if lower.endswith(".gcode.3mf"):
+        stem = base[: -len(".gcode.3mf")]
+    elif lower.endswith(".3mf"):
+        stem = base[: -len(".3mf")]
+    else:
+        stem = os.path.splitext(base)[0]
+    stem = stem.strip()[:NAME_MAX]
+    if not stem:
+        return None
+    return f"{stem}_plate_{int(m.group(1)) + 1}.gcode"
+
+
 def output_name(path):
     """
     The name the file is being saved under. The slicer usually hands the
     script a temporary file; PrusaSlicer and OrcaSlicer put the real name in
-    SLIC3R_PP_OUTPUT_NAME.
+    SLIC3R_PP_OUTPUT_NAME. Bambu Studio sets that to the temporary file, so
+    its name is rebuilt from the project instead.
     """
+    try:
+        bambu = bambu_name(path)
+    except Exception as e:  # a naming problem must never stop the upload
+        log(f"could not read the Bambu project name: {e!r}")
+        bambu = None
+    if bambu:
+        return bambu
     real = os.environ.get("SLIC3R_PP_OUTPUT_NAME")
     name = real or path
     return re.split(r"[\\/]", name)[-1]
