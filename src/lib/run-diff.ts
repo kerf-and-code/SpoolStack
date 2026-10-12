@@ -6,6 +6,8 @@
 // setting missing from one side is shown as "not recorded" rather than
 // skipped: "you stopped recording the bed temperature" is worth seeing too.
 
+import { optionLabel } from './run-params.ts';
+
 export interface DiffDef {
   key: string;
   display_name: string;
@@ -33,7 +35,8 @@ function show(v: unknown, unit: string | null): string {
     const n = Number.isInteger(v) ? String(v) : String(Math.round(v * 1000) / 1000);
     return unit ? `${n} ${unit}` : n;
   }
-  if (typeof v === 'string') return v.replace(/_/g, ' ');
+  if (typeof v === 'string') return optionLabel(v);
+  if (Array.isArray(v)) return v.length === 0 ? 'not recorded' : v.map((x) => (typeof x === 'string' ? optionLabel(x) : JSON.stringify(x))).join(', ');
   return JSON.stringify(v);
 }
 

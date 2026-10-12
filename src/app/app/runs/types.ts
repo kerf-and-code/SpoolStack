@@ -24,6 +24,9 @@ export interface MaterialOption {
   /** Category and brand let a gcode file's filament_type find this material. */
   category: string | null;
   brand: string | null;
+  color: string | null;
+  /** "#RRGGBB": the swatch beside the picker, and how an import tells spools apart. */
+  color_hex: string | null;
 }
 
 export interface ProjectOption {

@@ -20,17 +20,26 @@
 // startTransition, so a validation failure never wipes what was typed.
 
 import Link from 'next/link';
-import { startTransition, useActionState, useMemo, useState, useSyncExternalStore } from 'react';
+import { startTransition, useActionState, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { FilamentCatalogPicker, Swatch } from '@/components/filament-catalog-picker';
 import { LocalTime } from '@/components/local-time';
 import { formatDuration, parseDurationMinutes } from '@/lib/duration';
 import { readSlicedFile, titleFromFileName } from '@/lib/gcode-file';
 import { extractSlicerConfig, type SlicerConfigResult } from '@/lib/slicer-config';
+import {
+  filamentHintFromConfig,
+  findCatalogMatch,
+  loadCatalog,
+  materialFromPick,
+  type CatalogPick,
+} from '@/lib/filament-catalog';
 import { parseGcode, type ParsedRun } from '@/lib/gcodeParse';
 import { idleState, type FormState } from '@/lib/forms';
 import { acceptImportedParameters, importMetadata, storedParse, type ImportOrigin } from '@/lib/import-record';
 import { matchMachines, matchMaterial } from '@/lib/import-match';
-import { PARAM_PREFIX, parametersToFields, type ParamDefRow } from '@/lib/run-params';
+import { MULTI_SEPARATOR, PARAM_PREFIX, optionLabel, parametersToFields, type ParamDefRow } from '@/lib/run-params';
 import { createMachineFromImport } from '../machines/actions';
+import { createMaterialFromCatalog } from '../materials/actions';
 import { saveRun } from './actions';
 import { ImportPanel, type ImportSummary, type MachineStatus, type MaterialStatus } from './import-panel';
 import {
@@ -145,11 +154,12 @@ function computeImport(
     }
   }
 
-  // Material: same rule, with brand as the tie-breaker.
+  // Material: same rule, with brand and then the file's colour as tie-breakers.
+  const filamentHint = filamentHintFromConfig(config.config);
   let materialId = ctx.materialId;
   let materialStatus: MaterialStatus = { kind: 'none' };
   if (parsed.filamentType) {
-    const m = matchMaterial(parsed.filamentType, parsed.filamentBrand, materials, materialId);
+    const m = matchMaterial(parsed.filamentType, parsed.filamentBrand, materials, materialId, filamentHint?.hex ?? null);
     if (m.kind === 'keep') materialStatus = { kind: 'kept', name: m.material.name };
     else if (m.kind === 'select') {
       materialId = m.material.id;
@@ -157,6 +167,20 @@ function computeImport(
     } else if (m.kind === 'ambiguous') {
       materialStatus = { kind: 'ambiguous', type: parsed.filamentType, names: m.candidates.map((c) => c.name) };
     } else materialStatus = { kind: 'unmatched', type: parsed.filamentType };
+  }
+  // The selection carried over from the last run is cleared when the file's
+  // colour rules it out (same brand, different colour): leaving last run's
+  // black selected on a red print is how a wrong spool gets logged.
+  if (materialStatus.kind === 'unmatched' || materialStatus.kind === 'ambiguous') {
+    const current = materials.find((m) => m.id === materialId);
+    if (
+      current &&
+      filamentHint?.hex &&
+      current.color_hex &&
+      current.color_hex.toUpperCase() !== filamentHint.hex
+    ) {
+      materialId = '';
+    }
   }
 
   const paramFields = parametersToFields(accepted, parameterDefs.filter((d) => d.domain_id === 'fdm'));
@@ -190,6 +214,9 @@ function computeImport(
       machine: machineStatus,
       material: materialStatus,
       pendingId: origin.pendingId ?? null,
+      filamentHint,
+      // Filled in after the filament list loads, when none of yours matched.
+      catalogOffer: null,
       metadataJson: JSON.stringify(
         importMetadata(parsed, { format: config.format, skipped: config.skipped }, { ...origin, notes }, validation),
       ),
@@ -214,7 +241,9 @@ export function RunForm({
   /** A file the slicer uploader sent, opened from the "Did it print?" inbox. */
   fromUpload?: PendingImport;
 }) {
-  const { machines, materials, projects, parameterDefs, defectTypes, recentRuns } = data;
+  const { machines, projects, parameterDefs, defectTypes, recentRuns } = data;
+  // A filament can be added mid-form from the filament list, so the list is state.
+  const [materials, setMaterials] = useState<MaterialOption[]>(data.materials);
   const editing = initial !== undefined;
   const [state, dispatch, pending] = useActionState(action, idleState);
   const errors = state.status === 'error' ? state.fieldErrors : {};
@@ -270,6 +299,35 @@ export function RunForm({
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [addingMachine, setAddingMachine] = useState(false);
+  const [addingMaterial, setAddingMaterial] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+
+  // When an imported file names a filament none of yours matches, look it up
+  // in the filament list and offer to add it. Only the colour-bearing hint
+  // starts a lookup; the result lands in the summary the user is looking at.
+  const offerHint =
+    imported && imported.filamentHint && !imported.catalogOffer && !['selected', 'kept', 'created'].includes(imported.material.kind)
+      ? imported.filamentHint
+      : null;
+  useEffect(() => {
+    if (!offerHint) return;
+    let live = true;
+    loadCatalog()
+      .then((catalog) => {
+        const pick = live ? findCatalogMatch(catalog, offerHint) : null;
+        if (!pick) return;
+        setImported((s) =>
+          s && s.filamentHint === offerHint ? { ...s, catalogOffer: { pick, label: materialFromPick(pick).name } } : s,
+        );
+      })
+      .catch(() => {
+        // No offer is shown; the pickers still work.
+      });
+    return () => {
+      live = false;
+    };
+  }, [offerHint]);
 
   // Dates are formatted only on the client: the server renders in UTC, and a
   // server/client mismatch would be a hydration error. useSyncExternalStore
@@ -369,6 +427,30 @@ export function RunForm({
     }
   }
 
+  async function addMaterialFromCatalog(pick: CatalogPick) {
+    setAddingMaterial(true);
+    setCatalogError(null);
+    try {
+      const result = await createMaterialFromCatalog(pick);
+      if (!result.ok) {
+        setCatalogError(result.message);
+        setImported((s) => (s && s.catalogOffer ? { ...s, material: { kind: 'error', message: result.message } } : s));
+        return;
+      }
+      const added = result.material;
+      setMaterials((list) =>
+        list.some((m) => m.id === added.id) ? list : [...list, added].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      set('material_id', added.id);
+      setImported((s) => (s ? { ...s, material: { kind: 'created', name: added.name } } : s));
+      setShowCatalog(false);
+    } catch {
+      setCatalogError('Could not add the filament. Try again.');
+    } finally {
+      setAddingMaterial(false);
+    }
+  }
+
   async function addMachineFromFile(model: string) {
     setAddingMachine(true);
     try {
@@ -440,6 +522,8 @@ export function RunForm({
             addingMachine={addingMachine}
             onFile={importFile}
             onAddMachine={addMachineFromFile}
+            addingMaterial={addingMaterial}
+            onAddMaterial={addMaterialFromCatalog}
           />
         </>
       )}
@@ -491,28 +575,58 @@ export function RunForm({
           </Field>
 
           <Field label="Material" name="material_id" error={errors.material_id}>
-            <select
-              id="material_id"
-              name="material_id"
-              value={values.material_id}
-              onChange={(e) => set('material_id', e.target.value)}
-              className={inputClass}
-              aria-invalid={errors.material_id ? true : undefined}
+            <div className="flex items-center gap-2">
+              <Swatch hex={material?.color_hex} size="h-6 w-6" />
+              <select
+                id="material_id"
+                name="material_id"
+                value={values.material_id}
+                onChange={(e) => set('material_id', e.target.value)}
+                className={inputClass}
+                aria-invalid={errors.material_id ? true : undefined}
+              >
+                <option value="">{materials.length === 0 ? 'No materials yet' : 'Choose a material'}</option>
+                {materials.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.color && !m.name.toLowerCase().includes(m.color.toLowerCase()) ? `${m.name}, ${m.color}` : m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowCatalog((v) => !v)}
+              aria-expanded={showCatalog}
+              className="mt-1 text-xs underline underline-offset-2"
             >
-              <option value="">{materials.length === 0 ? 'No materials yet' : 'Choose a material'}</option>
-              {materials.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-            {materials.length === 0 ? (
-              <Link href="/app/materials/new" className="mt-1 inline-block text-xs underline underline-offset-2">
-                Add a material for material cost
-              </Link>
-            ) : null}
+              {showCatalog ? 'Close the filament list' : 'Not here? Add it from the filament list'}
+            </button>
           </Field>
         </div>
+
+        {showCatalog ? (
+          <div className="rounded-lg border border-black/10 p-4 dark:border-white/15">
+            <FilamentCatalogPicker
+              onPick={addMaterialFromCatalog}
+              busy={addingMaterial}
+              preferredBrands={[...new Set(materials.map((m) => m.brand).filter((b): b is string => Boolean(b)))]}
+              footer={
+                <p>
+                  Not on the list?{' '}
+                  <Link href="/app/materials/new" className="underline underline-offset-2">
+                    Add it by hand
+                  </Link>{' '}
+                  (opens Materials; this run is not saved yet).
+                </p>
+              }
+            />
+            {catalogError ? (
+              <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">
+                {catalogError}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         <fieldset>
           <legend className="mb-2 text-sm font-medium">
@@ -906,7 +1020,7 @@ function Field({
 }) {
   return (
     <div>
-      <label htmlFor={name} className="mb-1.5 block text-sm font-medium">
+      <label id={`${name}-label`} htmlFor={name} className="mb-1.5 block text-sm font-medium">
         {label}
       </label>
       {children}
@@ -952,10 +1066,45 @@ function ParamInput({
         <option value="">Not recorded</option>
         {(def.enum_options ?? []).map((o) => (
           <option key={o} value={o}>
-            {o.replace(/_/g, ' ')}
+            {optionLabel(o)}
           </option>
         ))}
       </select>
+    );
+  } else if (def.data_type === 'multi_enum') {
+    // Tick every one that applies. The ticks travel as one hidden field of
+    // keys joined by commas, in the order of the dictionary.
+    const picked = new Set(value.split(MULTI_SEPARATOR).filter(Boolean));
+    const toggle = (o: string, on: boolean) => {
+      const next = new Set(picked);
+      if (on) next.add(o);
+      else next.delete(o);
+      // "Nothing" and anything else contradict each other: the last tick wins.
+      if (on && o === 'none') for (const k of [...next]) if (k !== 'none') next.delete(k);
+      if (on && o !== 'none') next.delete('none');
+      onChange(name, (def.enum_options ?? []).filter((k) => next.has(k)).join(MULTI_SEPARATOR));
+    };
+    control = (
+      <div role="group" aria-labelledby={`${name}-label`} className="flex flex-wrap gap-2">
+        <input type="hidden" name={name} value={value} />
+        {(def.enum_options ?? []).map((o) => {
+          const on = picked.has(o);
+          return (
+            <label
+              key={o}
+              className={
+                'flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-sm select-none ' +
+                (on
+                  ? 'border-foreground bg-foreground text-background'
+                  : 'border-black/15 hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10')
+              }
+            >
+              <input type="checkbox" checked={on} onChange={(e) => toggle(o, e.target.checked)} className="sr-only" />
+              {optionLabel(o)}
+            </label>
+          );
+        })}
+      </div>
     );
   } else {
     control = (

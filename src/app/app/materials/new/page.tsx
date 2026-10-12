@@ -6,6 +6,7 @@ import { requireUser } from '@/lib/auth';
 import { MATERIAL_PRESETS, findMaterialPreset } from '@/lib/presets';
 import { getCurrency, getDomainOptions } from '@/lib/settings';
 import { saveMaterial } from '../actions';
+import { CatalogAdd } from './catalog-add';
 import { materialFieldGroups } from '../fields';
 
 export const metadata: Metadata = { title: 'Add material : SpoolStack' };
@@ -19,10 +20,12 @@ export default async function NewMaterialPage({
   const preset = findMaterialPreset(typeof rawPreset === 'string' ? rawPreset : undefined);
 
   const { supabase, userId } = await requireUser();
-  const [domainOptions, currency] = await Promise.all([
+  const [domainOptions, currency, ownBrands] = await Promise.all([
     getDomainOptions(supabase),
     getCurrency(supabase, userId),
+    supabase.from('materials').select('brand').not('brand', 'is', null),
   ]);
+  const preferredBrands = [...new Set((ownBrands.data ?? []).map((m) => m.brand).filter((b): b is string => Boolean(b)))];
 
   // Only physical properties come from a preset. Cost fields stay blank.
   const prefill = preset
@@ -39,6 +42,7 @@ export default async function NewMaterialPage({
   return (
     <div className="max-w-2xl">
       <PageHeader title="Add material" back={{ href: '/app/materials', label: 'Materials' }} />
+      {preset ? null : <CatalogAdd preferredBrands={preferredBrands} />}
       <PresetPicker
         action="/app/materials/new"
         groups={[
@@ -48,7 +52,7 @@ export default async function NewMaterialPage({
           },
         ]}
         value={preset?.id ?? ''}
-        label="Start from a filament type"
+        label="Not on the list? Start from a filament type"
         note="Fills in the category, unit, typical density and 1.75 mm diameter. Add the brand and colour, and a price if you want costing."
       />
       <EntityForm

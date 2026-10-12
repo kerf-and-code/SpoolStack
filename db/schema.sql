@@ -30,6 +30,8 @@
 --      same text as db/stage0.sql
 --  11. Stage 1 capture: upload tokens, pending runs, ingest functions,
 --      same text as db/stage1_ingest.sql
+--  12. Filament colour and existing-run updates from db/filament_and_bed.sql
+--      (its parameter and defect changes live in sections 1 and 8)
 -- =====================================================================
 
 
@@ -160,6 +162,41 @@ create table if not exists public.parameter_defs (
   constraint parameter_defs_range_sane
     check (min_value is null or max_value is null or min_value <= max_value)
 );
+
+-- Same block as db/filament_and_bed.sql section 2. It runs here, before the
+-- seed data, so a re-run of this file on an older project accepts the
+-- multi_enum rows below.
+-- multi_enum parameter type (added 2026-10-12)
+-- Replaces the data_type and enum-options checks with versions that also
+-- allow multi_enum. Found by what they check, not by name, so a project
+-- whose constraint was named differently is still updated.
+do $fb_multi_enum$
+declare
+  c record;
+begin
+  for c in
+    select conname
+    from pg_constraint
+    where conrelid = 'public.parameter_defs'::regclass
+      and contype = 'c'
+      and (pg_get_constraintdef(oid) like '%data_type = ANY%' or pg_get_constraintdef(oid) like '%data_type <> %')
+      and conname not in ('parameter_defs_data_type_check2', 'parameter_defs_options_present')
+  loop
+    execute format('alter table public.parameter_defs drop constraint %I', c.conname);
+  end loop;
+
+  if not exists (select 1 from pg_constraint where conname = 'parameter_defs_data_type_check2') then
+    alter table public.parameter_defs
+      add constraint parameter_defs_data_type_check2
+      check (data_type in ('number', 'integer', 'boolean', 'text', 'enum', 'multi_enum'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'parameter_defs_options_present') then
+    alter table public.parameter_defs
+      add constraint parameter_defs_options_present
+      check (data_type not in ('enum', 'multi_enum') or (enum_options is not null and cardinality(enum_options) > 0));
+  end if;
+end
+$fb_multi_enum$;
 
 comment on column public.parameter_defs.is_calibration_relevant is
   'Phase 3 reads only these keys when modelling what settings predict a good outcome.';
@@ -691,6 +728,8 @@ values
   ('fdm','first_layer_temp',     'First layer temp',    'Temperature','number', 'C',    150, 350, 1,    null, false, true,  'Often 5-10C above the bulk temperature for adhesion.', 20),
   ('fdm','bed_temp',             'Bed temperature',     'Temperature','number', 'C',    0,   140, 1,    null, false, true,  null, 30),
   ('fdm','chamber_temp',         'Chamber temperature', 'Temperature','number', 'C',    0,   120, 1,    null, false, true,  'Leave blank on open-frame machines.', 40),
+  ('fdm','enclosed',             'Printed in an enclosure', 'Temperature', 'boolean', null, null, null, null, null, false, true,
+     'An enclosed printer, or a box around an open one. Keeps the air around the print warm and still, which is what stops warping.', 45),
 
   ('fdm','layer_height',         'Layer height',        'Quality',    'number', 'mm',   0.02, 1.2, 0.01, null, true,  true,  null, 50),
   ('fdm','first_layer_height',   'First layer height',  'Quality',    'number', 'mm',   0.05, 1.2, 0.01, null, false, true,  null, 60),
@@ -718,9 +757,12 @@ values
   ('fdm','bed_adhesion',         'Bed adhesion',        'Adhesion',   'enum',   null,   null,null, null,
      array['none','skirt','brim','raft'], false, true, null, 220),
   ('fdm','supports',             'Supports used',       'Adhesion',   'boolean',null,   null,null, null, null, false, false, null, 230),
-  ('fdm','surface_prep',         'Bed surface prep',    'Adhesion',   'enum',   null,   null,null, null,
-     array['none','glue_stick','hairspray','isopropyl_clean','pei_textured','pei_smooth','tape','glass'], false, true,
-     'Cheap to log, and it explains more first-layer failures than temperature does.', 240),
+  ('fdm','bed_plate',            'Build plate',         'Adhesion',   'enum',   null,   null,null, null,
+     array['textured_pei','smooth_pei','satin_pei','cool_plate','supertack','engineering_plate','glass','garolite','buildtak','other'], false, true,
+     'The plate the print went on. Bambu''s High Temp Plate is smooth PEI.', 235),
+  ('fdm','surface_prep',         'Bed surface prep',    'Adhesion',   'multi_enum', null, null,null, null,
+     array['none','isopropyl_clean','soap_and_water','glue_stick','hairspray','adhesive_liquid','tape'], false, true,
+     'Everything you did to the plate, in any order. Cheap to log, and it explains more first-layer failures than temperature does.', 240),
 
   ('fdm','filament_dried',       'Filament dried',      'Material',   'boolean',null,   null,null, null, null, false, true,
      'Wet filament mimics a dozen other defects. Log it or you will chase ghosts.', 250)
@@ -745,10 +787,10 @@ insert into public.defect_types
 values
   ('fdm','stringing',              'Stringing / oozing',        'Fine strands between separate features.',
      array['retraction_distance','retraction_speed','nozzle_temp','travel_speed','filament_dried'], true, 10),
-  ('fdm','warping',                'Warping / curling',         'Corners lift off the bed or layers curl upward.',
-     array['bed_temp','chamber_temp','cooling_fan_percent','bed_adhesion'], true, 20),
+  ('fdm','warping',                'Warping: base lifts off the bed', 'The bottom of the print, usually the corners, lifts off the plate and curls up. Most often uneven or changing air temperature around the print (drafts, no enclosure). A brim helps hold it down.',
+     array['enclosed','chamber_temp','bed_temp','bed_adhesion','bed_plate','surface_prep','cooling_fan_percent'], true, 20),
   ('fdm','first_layer_adhesion',   'First layer will not stick','Print detaches or the first layer is patchy.',
-     array['z_offset','bed_temp','first_layer_temp','first_layer_speed','surface_prep','bed_adhesion'], true, 30),
+     array['z_offset','bed_temp','first_layer_temp','first_layer_speed','bed_plate','surface_prep','bed_adhesion'], true, 30),
   ('fdm','elephant_foot',          'Elephant foot',             'First layers bulge outward at the base.',
      array['z_offset','bed_temp','first_layer_temp'], true, 40),
   ('fdm','under_extrusion',        'Under-extrusion',           'Gaps between lines, thin or missing walls.',
@@ -760,7 +802,7 @@ values
   ('fdm','layer_shift',            'Layer shift',               'The print steps sideways partway up.',
      array['print_speed','acceleration','travel_speed'], true, 80),
   ('fdm','spaghetti',              'Spaghetti failure',         'The part came loose and the printer kept extruding.',
-     array['bed_adhesion','surface_prep','z_offset','supports'], true, 90),
+     array['bed_adhesion','bed_plate','surface_prep','z_offset','supports'], true, 90),
   ('fdm','ringing',                'Ringing / ghosting',        'Echoes of sharp features repeating across a surface.',
      array['acceleration','print_speed'], true, 100),
   ('fdm','z_banding',              'Z banding',                 'Regular horizontal bands at a fixed interval.',
@@ -794,7 +836,7 @@ on conflict (domain_id, key) do update
 -- =====================================================================
 -- Done. Verify with:
 --   select id, display_name from public.domains;
---   select count(*) from public.parameter_defs where domain_id = 'fdm';   -- expect 25
+--   select count(*) from public.parameter_defs where domain_id = 'fdm';   -- expect 27
 --   select count(*) from public.defect_types   where domain_id = 'fdm';   -- expect 20
 --   select relname, relrowsecurity from pg_class
 --     where relnamespace = 'public'::regnamespace and relkind = 'r' order by 1;
@@ -1257,3 +1299,49 @@ $ingest_slice$;
 
 revoke all on function public.ingest_slice(text, text, text, text, numeric, numeric, jsonb, jsonb) from public;
 grant execute on function public.ingest_slice(text, text, text, text, numeric, numeric, jsonb, jsonb) to anon, authenticated;
+
+
+-- =====================================================================
+-- 12. FILAMENT COLOUR AND EXISTING-RUN UPDATES
+-- =====================================================================
+-- From db/filament_and_bed.sql. The new settings (enclosure, build plate,
+-- multi-choice surface prep) and the warping wording are in the seed data
+-- in section 8; the multi_enum type is allowed in section 1.
+
+-- ---- 1. Filament colour ----------------------------------------------------
+alter table public.materials add column if not exists color_hex text;
+
+do $fb_material_hex$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'materials_color_hex_shape') then
+    alter table public.materials
+      add constraint materials_color_hex_shape check (color_hex is null or color_hex ~ '^#[0-9A-F]{6}$');
+  end if;
+end
+$fb_material_hex$;
+
+comment on column public.materials.color_hex is
+  'Colour as "#RRGGBB", upper case. Matched against filament_colour in slicer files.';
+
+
+-- ---- 4. Existing runs ---------------------------------------------------
+-- 4a. A plate type logged as surface prep moves to Build plate, unless the
+--     run already has a plate recorded.
+update public.runs
+set parameters = (parameters - 'surface_prep')
+  || case
+       when parameters ? 'bed_plate' then '{}'::jsonb
+       else jsonb_build_object('bed_plate',
+              case parameters->>'surface_prep'
+                when 'pei_textured' then 'textured_pei'
+                when 'pei_smooth'   then 'smooth_pei'
+                else 'glass'
+              end)
+     end
+where jsonb_typeof(parameters->'surface_prep') = 'string'
+  and parameters->>'surface_prep' in ('pei_textured', 'pei_smooth', 'glass');
+
+-- 4b. Any other single surface prep value becomes a one-item list.
+update public.runs
+set parameters = jsonb_set(parameters, '{surface_prep}', jsonb_build_array(parameters->'surface_prep'))
+where jsonb_typeof(parameters->'surface_prep') = 'string';

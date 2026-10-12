@@ -17,6 +17,7 @@ export interface MaterialRow {
   name: string;
   category: string | null;
   brand: string | null;
+  color_hex?: string | null;
   domain_id: string;
 }
 
@@ -31,6 +32,8 @@ export function resolveSetup(
   filamentBrand: string | null,
   machines: MachineRow[],
   materials: MaterialRow[],
+  /** The file's filament colour, "#RRGGBB", when the slicer wrote one. */
+  fileHex: string | null = null,
 ): { machine: MachineRow | null; material: MaterialRow | null } {
   let machine: MachineRow | null = null;
   if (printerModel) {
@@ -43,7 +46,7 @@ export function resolveSetup(
   let material: MaterialRow | null = null;
   const sameDomain = materials.filter((m) => !machine || m.domain_id === machine.domain_id);
   if (filamentType) {
-    const m = matchMaterial(filamentType, filamentBrand, sameDomain, '');
+    const m = matchMaterial(filamentType, filamentBrand, sameDomain, '', fileHex);
     if (m.kind === 'select') material = m.material;
   } else if (sameDomain.length === 1) {
     material = sameDomain[0];

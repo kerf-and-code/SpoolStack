@@ -98,3 +98,13 @@ test('an uploaded file is marked as such in the run record', () => {
   const picked = importMetadata(parsed, { format: null, skipped: 0 }, { fileName: 'x.gcode', kind: 'gcode', plate: null, notes: [] }, validation);
   assert.equal('via' in picked, false);
 });
+
+test('the file colour tells two spools of the same PLA apart', () => {
+  const black: MaterialRow = { ...PLA, id: 'k', name: 'PLA Basic Black', color_hex: '#000000' };
+  const maroon: MaterialRow = { ...PLA, id: 'r', name: 'PLA Basic Maroon Red', color_hex: '#9D2235' };
+  assert.equal(resolveSetup('Bambu Lab A1', 'PLA', 'Bambu Lab', [A1], [black, maroon], '#9D2235').material?.id, 'r');
+  assert.equal(resolveSetup('Bambu Lab A1', 'PLA', 'Bambu Lab', [A1], [black, maroon], null).material, null, 'no colour, no guess');
+  assert.equal(resolveSetup('Bambu Lab A1', 'PLA', 'Bambu Lab', [A1], [black], '#9D2235').material, null, 'a black spool is not a red print');
+  const unrecorded: MaterialRow = { ...PLA, id: 'u', color_hex: null };
+  assert.equal(resolveSetup('Bambu Lab A1', 'PLA', 'Bambu Lab', [A1], [black, unrecorded], '#9D2235').material?.id, 'u');
+});

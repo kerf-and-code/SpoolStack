@@ -17,7 +17,7 @@ test('only changed settings, in dictionary order, with units', () => {
   const after = { layer_height: 0.2, nozzle_temp: 210, bed_adhesion: 'brim' };
   assert.deepEqual(diffParameters(before, after, DEFS), [
     { key: 'nozzle_temp', label: 'Nozzle temperature', before: '220 C', after: '210 C' },
-    { key: 'bed_adhesion', label: 'Bed adhesion', before: 'none', after: 'brim' },
+    { key: 'bed_adhesion', label: 'Bed adhesion', before: 'None', after: 'brim' },
   ]);
 });
 

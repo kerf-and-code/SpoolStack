@@ -23,7 +23,7 @@ export async function loadRunFormData(
     supabase.from('machines').select('id, name, domain_id, make, model, is_active').or(machineFilter).order('name'),
     supabase
       .from('materials')
-      .select('id, name, unit, domain_id, category, brand, is_active')
+      .select('id, name, unit, domain_id, category, brand, color, color_hex, is_active')
       .or(materialFilter)
       .order('name'),
     supabase.from('projects').select('id, name, status').or(projectFilter).order('name'),

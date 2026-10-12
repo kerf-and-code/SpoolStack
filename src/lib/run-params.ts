@@ -12,7 +12,7 @@
 // into the calibration history with no trace.
 
 import type { Json, Tables } from './database.types';
-import { validateParameters, type ParameterDef } from './gcodeParse.ts';
+import { validateParameters, type ParameterDef, type ParamValue } from './gcodeParse.ts';
 
 export type ParamDefRow = Pick<
   Tables<'parameter_defs'>,
@@ -31,7 +31,39 @@ export type ParamDefRow = Pick<
   | 'domain_id'
 >;
 
-export type ParamValue = number | string | boolean;
+export type { ParamValue };
+
+/**
+ * A multi-choice setting travels through the form as one field of option
+ * keys joined by commas ("isopropyl_clean,hairspray"). Option keys never
+ * contain commas (parameter_defs_key_shape-style snake case).
+ */
+export const MULTI_SEPARATOR = ',';
+
+/** Readable names for option keys. Anything not listed falls back to the key with spaces. */
+const OPTION_LABELS: Record<string, string> = {
+  textured_pei: 'Textured PEI',
+  smooth_pei: 'Smooth PEI',
+  satin_pei: 'Satin PEI',
+  cool_plate: 'Cool Plate',
+  supertack: 'SuperTack',
+  engineering_plate: 'Engineering Plate',
+  glass: 'Glass',
+  garolite: 'Garolite (G10)',
+  buildtak: 'BuildTak',
+  other: 'Other',
+  none: 'None',
+  isopropyl_clean: 'Cleaned with isopropyl (IPA)',
+  soap_and_water: 'Washed with dish soap',
+  glue_stick: 'Glue stick',
+  hairspray: 'Hairspray',
+  adhesive_liquid: 'Adhesive (Magigoo, 3DLac)',
+  tape: 'Tape',
+};
+
+export function optionLabel(key: string): string {
+  return OPTION_LABELS[key] ?? key.replace(/_/g, ' ');
+}
 
 export const PARAM_PREFIX = 'p.';
 
@@ -99,6 +131,15 @@ export function parseParameterFields(
         values[def.key] = raw;
         break;
       }
+      case 'multi_enum': {
+        const picked = [...new Set(raw.split(MULTI_SEPARATOR).map((v) => v.trim()).filter(Boolean))];
+        if (picked.some((v) => !(def.enum_options ?? []).includes(v))) {
+          errors[name] = `Choose from the listed options for ${def.display_name}.`;
+          break;
+        }
+        if (picked.length > 0) values[def.key] = picked;
+        break;
+      }
       default: {
         if (raw.length > 200) {
           errors[name] = `${def.display_name} must be 200 characters or fewer.`;
@@ -133,6 +174,7 @@ export function parametersToFields(parameters: Json | null | undefined, defs: Pa
     if (v === undefined || v === null) continue;
     if (typeof v === 'boolean') out[PARAM_PREFIX + def.key] = v ? 'yes' : 'no';
     else if (typeof v === 'number' || typeof v === 'string') out[PARAM_PREFIX + def.key] = String(v);
+    else if (Array.isArray(v)) out[PARAM_PREFIX + def.key] = v.filter((x) => typeof x === 'string').join(MULTI_SEPARATOR);
   }
   return out;
 }

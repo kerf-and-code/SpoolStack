@@ -10,6 +10,7 @@ import { formatDuration } from '@/lib/duration';
 import { formatNumber } from '@/lib/format';
 import { PHOTO_BUCKET, PHOTOS_PER_RUN_LIMIT, defaultPhotoKind, isPhotoKind } from '@/lib/photos';
 import { diffParameters } from '@/lib/run-diff';
+import { optionLabel } from '@/lib/run-params';
 import { deleteRun } from '../actions';
 import { PARAM_DEF_COLUMNS } from '../data';
 import { OutcomeBadge } from '../outcome-badge';
@@ -38,7 +39,8 @@ function displayValue(v: Json | undefined, unit: string | null): string {
   if (v === undefined || v === null) return '';
   if (typeof v === 'boolean') return v ? 'Yes' : 'No';
   if (typeof v === 'number') return `${formatNumber(v, 3)}${unit ? ` ${unit}` : ''}`;
-  if (typeof v === 'string') return v.replace(/_/g, ' ');
+  if (typeof v === 'string') return optionLabel(v);
+  if (Array.isArray(v)) return v.map((x) => (typeof x === 'string' ? optionLabel(x) : JSON.stringify(x))).join(', ');
   return JSON.stringify(v);
 }
 

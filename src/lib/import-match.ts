@@ -17,6 +17,8 @@ export interface MaterialLike {
   name: string;
   category: string | null;
   brand: string | null;
+  /** "#RRGGBB". Optional so callers without colours still type-check. */
+  color_hex?: string | null;
 }
 
 export function norm(s: string | null | undefined): string {
@@ -53,17 +55,34 @@ export type MaterialMatch<T> =
 /**
  * Pick a material for the file's filament type. Keeps the current selection if
  * it already matches, so importing never overrides a deliberate choice.
+ *
+ * With the file's colour (filament_colour, "#RRGGBB"):
+ *   - two spools of the same type are told apart by colour;
+ *   - a spool of the SAME brand recorded in a DIFFERENT colour is ruled out,
+ *     so last run's Bambu black is not picked for a Bambu maroon print.
+ * A different brand's colour is never used to rule anything out: slicer
+ * profiles for other brands often carry a made-up display colour.
  */
 export function matchMaterial<T extends MaterialLike>(
   filamentType: string | null,
   filamentBrand: string | null,
   materials: T[],
   currentId: string,
+  fileHex: string | null = null,
 ): MaterialMatch<T> {
   const type = norm(filamentType);
   if (!type) return { kind: 'none' };
 
-  const byType = materials.filter((m) => norm(m.category) === type);
+  const brand = norm(filamentBrand);
+  const hex = fileHex ? fileHex.toUpperCase() : null;
+  const brandMatches = (m: T) => {
+    const b = norm(m.brand);
+    return brand !== '' && b.length >= 3 && brand.includes(b);
+  };
+  const contradicts = (m: T) =>
+    hex !== null && !!m.color_hex && m.color_hex.toUpperCase() !== hex && brandMatches(m);
+
+  const byType = materials.filter((m) => norm(m.category) === type && !contradicts(m));
   if (byType.length === 0) return { kind: 'none' };
 
   const current = byType.find((m) => m.id === currentId);
@@ -71,14 +90,15 @@ export function matchMaterial<T extends MaterialLike>(
 
   if (byType.length === 1) return { kind: 'select', material: byType[0] };
 
-  const brand = norm(filamentBrand);
-  if (brand) {
-    const byBrand = byType.filter((m) => {
-      const b = norm(m.brand);
-      return b.length >= 3 && brand.includes(b);
-    });
-    if (byBrand.length === 1) return { kind: 'select', material: byBrand[0] };
+  // Narrow by brand, then by colour; stop at the first step that leaves one.
+  let candidates = byType;
+  const byBrand = candidates.filter(brandMatches);
+  if (byBrand.length === 1) return { kind: 'select', material: byBrand[0] };
+  if (byBrand.length > 1) candidates = byBrand;
+  if (hex) {
+    const byColour = candidates.filter((m) => m.color_hex && m.color_hex.toUpperCase() === hex);
+    if (byColour.length === 1) return { kind: 'select', material: byColour[0] };
   }
 
-  return { kind: 'ambiguous', candidates: byType };
+  return { kind: 'ambiguous', candidates };
 }

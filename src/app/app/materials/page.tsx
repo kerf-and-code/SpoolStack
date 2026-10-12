@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { Swatch } from '@/components/filament-catalog-picker';
 import { Notice, PageHeader } from '@/components/page-header';
 import { requireUser } from '@/lib/auth';
 import { formatMoney } from '@/lib/format';
@@ -26,7 +27,7 @@ export default async function MaterialsPage({
   const [{ data: materials, error }, currency] = await Promise.all([
     supabase
       .from('materials')
-      .select('id, name, category, brand, color, unit, cost_per_unit')
+      .select('id, name, category, brand, color, color_hex, unit, cost_per_unit')
       .eq('is_active', !showArchived)
       .order('name'),
     getCurrency(supabase, userId),
@@ -85,6 +86,7 @@ export default async function MaterialsPage({
                   href={`/app/materials/${m.id}`}
                   className="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 py-3 hover:bg-black/5 dark:hover:bg-white/5"
                 >
+                  <Swatch hex={m.color_hex} size="h-5 w-5" />
                   <div className="min-w-0 flex-1">
                     <div className="font-medium">{m.name}</div>
                     {detail ? <div className="text-sm opacity-60">{detail}</div> : null}

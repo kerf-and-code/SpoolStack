@@ -11,6 +11,8 @@ export const parameterDefsFixture: ParamDefRow[] = [
   { ...base, key: 'layer_height', display_name: 'Layer height', group_name: 'Quality', data_type: 'number', unit: 'mm', min_value: 0.02, max_value: 1.2, is_required: true, sort_order: 50 },
   { ...base, key: 'infill_pattern', display_name: 'Infill pattern', group_name: 'Structure', data_type: 'enum', unit: null, min_value: null, max_value: null, enum_options: ['grid', 'gyroid', 'cubic', 'triangles', 'lightning', 'honeycomb', 'concentric', 'rectilinear'], sort_order: 180 },
   { ...base, key: 'wall_count', display_name: 'Wall count', group_name: 'Structure', data_type: 'integer', unit: null, min_value: 0, max_value: 20, sort_order: 190 },
+  { ...base, key: 'bed_plate', display_name: 'Build plate', group_name: 'Adhesion', data_type: 'enum', unit: null, min_value: null, max_value: null, enum_options: ['textured_pei', 'smooth_pei', 'satin_pei', 'cool_plate', 'supertack', 'engineering_plate', 'glass', 'garolite', 'buildtak', 'other'], sort_order: 235 },
+  { ...base, key: 'surface_prep', display_name: 'Bed surface prep', group_name: 'Adhesion', data_type: 'multi_enum', unit: null, min_value: null, max_value: null, enum_options: ['none', 'isopropyl_clean', 'soap_and_water', 'glue_stick', 'hairspray', 'adhesive_liquid', 'tape'], sort_order: 240 },
   { ...base, key: 'supports', display_name: 'Supports used', group_name: 'Adhesion', data_type: 'boolean', unit: null, min_value: null, max_value: null, sort_order: 230 },
   { ...base, key: 'filament_dried', display_name: 'Filament dried', group_name: 'Material', data_type: 'boolean', unit: null, min_value: null, max_value: null, sort_order: 250 },
 ];

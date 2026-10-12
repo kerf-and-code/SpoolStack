@@ -18,7 +18,9 @@
     "test:slicer-config": "node --experimental-strip-types src/lib/slicer-config.test.ts",
     "test:run-diff": "node --experimental-strip-types src/lib/run-diff.test.ts",
     "test:ingest": "node --experimental-strip-types src/lib/ingest.test.ts",
-    "test:inbox": "node --experimental-strip-types src/lib/inbox.test.ts"
+    "test:inbox": "node --experimental-strip-types src/lib/inbox.test.ts",
+    "test:filament-catalog": "node --experimental-strip-types src/lib/filament-catalog.test.ts",
+    "catalog:update": "node scripts/build-filament-catalog.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

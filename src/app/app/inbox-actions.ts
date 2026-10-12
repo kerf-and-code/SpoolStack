@@ -12,12 +12,18 @@ import { revalidatePath } from 'next/cache';
 import { requireUser } from '@/lib/auth';
 import type { Json } from '@/lib/database.types';
 import { titleFromFileName } from '@/lib/gcode-file';
+import { filamentHintFromConfig } from '@/lib/filament-catalog';
 import { acceptImportedParameters, importMetadata, storedParse } from '@/lib/import-record';
 import type { ServerClient } from '@/lib/supabase/server';
 import { resolveSetup } from '@/lib/inbox-match';
 import { PARAM_DEF_COLUMNS } from './runs/data';
 
 const UUID = /^[0-9a-f-]{36}$/i;
+
+/** pending_runs.slicer_config as the plain key-to-text object it is stored as. */
+function asConfig(v: unknown): Record<string, string> | null {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, string>) : null;
+}
 
 export type InboxResult =
   | { ok: true; runId: string; title: string }
@@ -26,7 +32,7 @@ export type InboxResult =
 async function loadSetup(supabase: ServerClient) {
   const [machines, materials] = await Promise.all([
     supabase.from('machines').select('id, name, make, model, domain_id').eq('is_active', true),
-    supabase.from('materials').select('id, name, category, brand, domain_id').eq('is_active', true),
+    supabase.from('materials').select('id, name, category, brand, color_hex, domain_id').eq('is_active', true),
   ]);
   return { machines: machines.data ?? [], materials: materials.data ?? [] };
 }
@@ -53,6 +59,7 @@ export async function logPendingWorked(pendingId: string): Promise<InboxResult> 
     parsed.filamentBrand,
     machines,
     materials,
+    filamentHintFromConfig(asConfig(pending.slicer_config))?.hex ?? null,
   );
   if (!machine || !material) {
     return { ok: false, openForm: true, message: 'Pick the machine and material for this one.' };

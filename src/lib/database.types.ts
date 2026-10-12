@@ -164,6 +164,7 @@ export type Database = {
           brand: string | null
           category: string | null
           color: string | null
+          color_hex: string | null
           cost_per_unit: number | null
           created_at: string
           density_g_cm3: number | null
@@ -184,6 +185,7 @@ export type Database = {
           brand?: string | null
           category?: string | null
           color?: string | null
+          color_hex?: string | null
           cost_per_unit?: number | null
           created_at?: string
           density_g_cm3?: number | null
@@ -204,6 +206,7 @@ export type Database = {
           brand?: string | null
           category?: string | null
           color?: string | null
+          color_hex?: string | null
           cost_per_unit?: number | null
           created_at?: string
           density_g_cm3?: number | null

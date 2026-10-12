@@ -11,6 +11,8 @@ import { materialFieldGroups } from '../fields';
 export const metadata: Metadata = { title: 'Edit material : SpoolStack' };
 
 const NOTICES: Record<string, string> = {
+  from_catalog: 'Added from the filament list. Add what the spool cost below if you want costing; everything else is filled in.',
+  already_have: 'You already have this filament, so nothing new was added. Here it is.',
   in_use: 'This material has logged runs, so it cannot be deleted. Archive it instead: its runs keep their costs.',
   delete_failed: 'Delete failed. Nothing was removed.',
   update_failed: 'That change did not save. Reload and try again.',
@@ -46,7 +48,9 @@ export default async function EditMaterialPage({
         description={material.is_active ? undefined : 'Archived. Restore it to use it for new runs.'}
         back={{ href: '/app/materials', label: 'Materials' }}
       />
-      {noticeText ? <Notice tone="warn">{noticeText}</Notice> : null}
+      {noticeText ? (
+        <Notice tone={notice === 'from_catalog' || notice === 'already_have' ? 'ok' : 'warn'}>{noticeText}</Notice>
+      ) : null}
 
       <EntityForm
         action={saveMaterial.bind(null, material.id)}

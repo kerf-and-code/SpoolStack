@@ -222,7 +222,20 @@ const FDM_DEFS: ParameterDef[] = [
   { key: 'supports', data_type: 'boolean', min_value: null, max_value: null, enum_options: null },
   { key: 'filament_dried', data_type: 'boolean', min_value: null, max_value: null, enum_options: null },
   { key: 'chamber_temp', data_type: 'number', min_value: 0, max_value: 120, enum_options: null },
-  { key: 'surface_prep', data_type: 'enum', min_value: null, max_value: null, enum_options: ['none', 'glue_stick'] },
+  {
+    key: 'surface_prep',
+    data_type: 'multi_enum',
+    min_value: null,
+    max_value: null,
+    enum_options: ['none', 'isopropyl_clean', 'glue_stick', 'hairspray'],
+  },
+  {
+    key: 'bed_plate',
+    data_type: 'enum',
+    min_value: null,
+    max_value: null,
+    enum_options: ['textured_pei', 'smooth_pei', 'satin_pei', 'cool_plate', 'supertack', 'engineering_plate', 'glass', 'other'],
+  },
 ];
 
 // --------------------------------------------------------------------------
@@ -447,4 +460,29 @@ test('every parsed key across all fixtures exists in parameter_defs', () => {
       assert.ok(known.has(key), `${name} produced unknown key: ${key}`);
     }
   }
+});
+
+test('REAL Bambu file: the build plate is read from curr_bed_type', () => {
+  assert.equal(parseGcode(BAMBU_A1_REAL).parameters.bed_plate, 'smooth_pei', 'High Temp Plate is smooth PEI');
+  const plate = (name: string) =>
+    parseGcode(BAMBU_A1_REAL.replace('curr_bed_type = High Temp Plate', `curr_bed_type = ${name}`)).parameters.bed_plate;
+  assert.equal(plate('Textured PEI Plate'), 'textured_pei');
+  assert.equal(plate('Cool Plate'), 'cool_plate');
+  assert.equal(plate('Supertack Plate'), 'supertack');
+  assert.equal(plate('Engineering Plate'), 'engineering_plate');
+  assert.equal(plate('Mystery Plate'), undefined);
+  assert.equal(parseGcode(PRUSA).parameters.bed_plate, undefined, 'PrusaSlicer names no plate');
+});
+
+test('multi-choice settings accept a list of known options, in order, without repeats', () => {
+  const r = validateParameters(
+    { surface_prep: ['isopropyl_clean', 'hairspray', 'isopropyl_clean'] },
+    FDM_DEFS,
+  );
+  assert.deepEqual(r.accepted.surface_prep, ['isopropyl_clean', 'hairspray']);
+  // An older run stored one value as a string; it reads as a one-item list.
+  assert.deepEqual(validateParameters({ surface_prep: 'glue_stick' }, FDM_DEFS).accepted.surface_prep, ['glue_stick']);
+  assert.ok('surface_prep' in validateParameters({ surface_prep: ['isopropyl_clean', 'lava'] }, FDM_DEFS).rejected);
+  assert.ok('surface_prep' in validateParameters({ surface_prep: [] }, FDM_DEFS).rejected);
+  assert.ok('nozzle_temp' in validateParameters({ nozzle_temp: ['210'] }, FDM_DEFS).rejected, 'no lists for single values');
 });

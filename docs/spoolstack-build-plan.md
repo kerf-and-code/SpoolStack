@@ -481,6 +481,16 @@ Opted-in pooled data retrains the model and each release ships to everyone. Loca
 - **The inbox.** On the dashboard. **Worked** logs the run in one tap when the file's printer matches exactly one of your machines and its filament exactly one of your materials (`src/lib/inbox-match.ts`); otherwise it opens the form. **Failed** and **Partly, or edit first** open the run form already filled in, exactly as an import would (`src/lib/import-record.ts` is shared by all three paths). **Didn't print** sets it aside. Entries older than 14 days stop showing but are kept. Without a token, a returning user sees a "Log prints without typing" card instead.
 - **To check on real slicers:** whether Bambu Studio sets `SLIC3R_PP_OUTPUT_NAME` (if not, entries show a temporary file name and re-slices are not superseded), and whether it runs the script on send-to-printer as well as export. The script's log records the path and name it was given on every run, so the first real slice answers both.
 
+**Filament list, colours, plate and prep, as built (2026-10-12):** `db/filament_and_bed.sql`, with its parameter and defect changes in the seed data of `db/schema.sql` and its column and run updates in section 12. Asked for while setting up a print: a run had no way to say which colour, and the material defaulted to last run's black.
+
+- **The filament list.** `public/catalog/filaments.json`, built from the Open Filament Database (MIT, SimplyPrint and the Open Filament Collective) by `npm run catalog:update`: 156 brands, 1,961 filament lines, 14,509 colours with hex codes, 430 KB (110 KB compressed), loaded only when a picker opens. Picking brand, type and colour adds a material with brand, type, colour, hex, density and 1.75 mm, never a price. On Add material it opens the new material so only the price is left to type; inside the run form it adds and selects it without leaving the form.
+- **Colour on materials.** `materials.color_hex`. Swatches in the materials list and beside the run form's material picker.
+- **Colour from the file.** Bambu, Orca and Prusa files carry `filament_colour`. Matching uses it to tell two spools of the same type apart, and rules out a spool of the same brand recorded in a different colour (another brand's colour is never trusted: profiles carry made-up display colours). When the carried-over spool is ruled out it is cleared, and the file's own filament is looked up in the list and offered: the real A1 file comes back as "Bambu Lab PLA Basic Maroon Red", one tap to add. The inbox's one-tap Worked uses the same rule.
+- **Build plate** (one choice) and **surface prep** (any number, a new `multi_enum` parameter type stored as a JSON list). Build plate is read from Bambu and Orca files (`curr_bed_type`; High Temp Plate is smooth PEI). Existing runs whose surface prep held a plate type (textured PEI, smooth PEI, glass) had it moved to build plate; other values became one-item lists.
+- **Printed in an enclosure,** a yes/no setting under Temperature.
+- **Warping** renamed "Warping: base lifts off the bed", described as uneven air temperature with a brim as the help, and its likely causes now start with enclosure, chamber temperature, bed temperature, brim, plate and prep. These are the seeds Stage 4's fix suggestions will rank from.
+- **Stage 2 note:** colour belongs to the physical spool. When spools arrive, a spool references its material and the colour stays on the material.
+
 ### Competitors (checked 2026-09-25)
 
 | Product | What it does | Free? |
@@ -507,3 +517,4 @@ Opted-in pooled data retrains the model and each release ships to everyone. Loca
 7. ~~Stage 1 slice 2: the slicer uploader, `/api/ingest` with upload tokens, and the "Did it print?" inbox.~~ Built 2026-10-02. Run `db/stage1_ingest.sql` before deploying, then set up the uploader on your PC.
 8. **Revise the FAQ answer** that says photo diagnosis might be paid one day. Under the rule above it will be free, because it runs on the device.
 9. **Stage 1 slice 3:** Klipper and OctoPrint connectors (built but untested until someone with that printer tries them), the Android share target, and the offline queue for the run form.
+10. **Filament list, colours, plate and prep:** built 2026-10-12. Run `db/filament_and_bed.sql` before deploying. Refresh the list now and then with `npm run catalog:update`.

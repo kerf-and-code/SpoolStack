@@ -4,7 +4,7 @@
 // opened from the inbox, and logged in one tap from the inbox. Keeping one
 // copy means all three store the same record for the same file.
 
-import { validateParameters, type ParameterDef, type ParsedRun, type ValidationResult } from './gcodeParse.ts';
+import { validateParameters, type ParameterDef, type ParamValue, type ParsedRun, type ValidationResult } from './gcodeParse.ts';
 
 export interface ImportDef {
   key: string;
@@ -30,7 +30,7 @@ export interface OutOfRange {
 export function acceptImportedParameters(
   parameters: ParsedRun['parameters'],
   defs: ImportDef[],
-): { accepted: Record<string, number | string | boolean>; outOfRange: OutOfRange[]; validation: ValidationResult } {
+): { accepted: Record<string, ParamValue>; outOfRange: OutOfRange[]; validation: ValidationResult } {
   const fdmDefs = defs.filter((d) => d.domain_id === 'fdm');
   const validation = validateParameters(parameters ?? {}, fdmDefs as unknown as ParameterDef[]);
   const accepted = { ...validation.accepted };

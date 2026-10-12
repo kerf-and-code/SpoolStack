@@ -154,3 +154,28 @@ test('formatDurationForInput round-trips stored durations exactly', () => {
   assert.equal(formatDurationForInput(134), '2h 14m');
   assert.equal(formatDurationForInput(null), '');
 });
+
+test('surface prep takes several methods; build plate takes one', () => {
+  const ok = parseParameterFields(
+    { 'p.nozzle_temp': '220', 'p.layer_height': '0.2', 'p.bed_plate': 'textured_pei', 'p.surface_prep': 'isopropyl_clean,hairspray' },
+    parameterDefsFixture,
+  );
+  assert.deepEqual(ok.errors, {});
+  assert.equal(ok.values.bed_plate, 'textured_pei');
+  assert.deepEqual(ok.values.surface_prep, ['isopropyl_clean', 'hairspray']);
+
+  // Back to the form and in again: nothing lost, nothing reordered.
+  const fields = parametersToFields(ok.values as never, parameterDefsFixture);
+  assert.equal(fields['p.surface_prep'], 'isopropyl_clean,hairspray');
+  assert.deepEqual(parseParameterFields(fields, parameterDefsFixture).values.surface_prep, ['isopropyl_clean', 'hairspray']);
+
+  const bad = parseParameterFields(
+    { 'p.nozzle_temp': '220', 'p.layer_height': '0.2', 'p.surface_prep': 'isopropyl_clean,lava', 'p.bed_plate': 'textured_pei,glass' },
+    parameterDefsFixture,
+  );
+  assert.ok(bad.errors['p.surface_prep']);
+  assert.ok(bad.errors['p.bed_plate'], 'one plate only');
+
+  const none = parseParameterFields({ 'p.nozzle_temp': '220', 'p.layer_height': '0.2', 'p.surface_prep': '' }, parameterDefsFixture);
+  assert.equal('surface_prep' in none.values, false, 'nothing ticked means not recorded');
+});

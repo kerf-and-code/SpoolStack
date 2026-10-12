@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { InstallButton } from '@/components/install-button';
 import { requireUser } from '@/lib/auth';
 import { formatDuration } from '@/lib/duration';
+import { normHex } from '@/lib/filament-catalog';
 import { storedParse } from '@/lib/import-record';
 import { MACHINE_PRESETS, MATERIAL_PRESETS } from '@/lib/presets';
 import { Inbox, type InboxItem } from './inbox';
@@ -36,14 +37,14 @@ export default async function DashboardPage() {
     supabase.from('runs').select('outcome, duration_minutes, material_id, materials(name)').limit(5000),
     supabase
       .from('pending_runs')
-      .select('id, file_name, printer_model, duration_minutes, material_g, sliced_at, parsed')
+      .select('id, file_name, printer_model, duration_minutes, material_g, sliced_at, parsed, filament_colour:slicer_config->>filament_colour')
       .eq('status', 'pending')
       .gte('sliced_at', inboxSince)
       .order('sliced_at', { ascending: false })
       .limit(10),
     supabase.from('upload_tokens').select('*', { count: 'exact', head: true }).is('revoked_at', null),
     supabase.from('machines').select('id, name, make, model, domain_id').eq('is_active', true),
-    supabase.from('materials').select('id, name, category, brand, domain_id').eq('is_active', true),
+    supabase.from('materials').select('id, name, category, brand, color_hex, domain_id').eq('is_active', true),
   ]);
 
   const errors = [runs, machines, materials, projects, settings, parameterDefs, history, pending, tokens]
@@ -59,6 +60,7 @@ export default async function DashboardPage() {
       parsed.filamentBrand,
       machineRows.data ?? [],
       materialRows.data ?? [],
+      normHex(typeof p.filament_colour === 'string' ? p.filament_colour : null),
     );
     return {
       id: p.id,

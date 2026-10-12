@@ -21,6 +21,9 @@
 //   * Volume in cm3 plus the material's real density beats length plus an
 //     assumed 1.75mm diameter. Prefer it when present.
 
+/** A parameter value: multi_enum settings hold a list of option keys. */
+export type ParamValue = number | string | boolean | string[];
+
 export interface ParsedRun {
   durationMinutes: number | null;
   materialQtyUsedG: number | null;
@@ -33,7 +36,7 @@ export interface ParsedRun {
   filamentBrand: string | null;
   slicer: string | null;
   /** Maps onto runs.parameters. Keys match parameter_defs.key for domain 'fdm'. */
-  parameters: Record<string, number | string | boolean>;
+  parameters: Record<string, ParamValue>;
   /** Everything matched, verbatim. Store in runs.source_metadata. */
   raw: Record<string, string>;
   /** Non-fatal notes for the import UI ("duration not found in this file"). */
@@ -42,7 +45,7 @@ export interface ParsedRun {
 
 export interface ParameterDef {
   key: string;
-  data_type: 'number' | 'integer' | 'boolean' | 'text' | 'enum';
+  data_type: 'number' | 'integer' | 'boolean' | 'text' | 'enum' | 'multi_enum';
   min_value: number | null;
   max_value: number | null;
   enum_options: string[] | null;
@@ -196,7 +199,7 @@ function normaliseInfillPattern(v: string | null): string | null {
 
 export function parseGcode(text: string): ParsedRun {
   const raw: Record<string, string> = {};
-  const params: Record<string, number | string | boolean> = {};
+  const params: Record<string, ParamValue> = {};
   const warnings: string[] = [];
 
   const note = (k: string, v: string | null) => {
@@ -387,6 +390,21 @@ export function parseGcode(text: string): ParsedRun {
             ? 'cool_plate_temp'
             : null;
   if (bedType) note('bed_type', bedType);
+  // The same name says which plate the print went on.
+  put(
+    'bed_plate',
+    bedType.includes('supertack')
+      ? 'supertack'
+      : bedType.includes('textured')
+        ? 'textured_pei'
+        : bedType.includes('engineering')
+          ? 'engineering_plate'
+          : bedType.includes('high temp') || bedType.includes('smooth pei') || bedType === 'pei plate'
+            ? 'smooth_pei'
+            : bedType.includes('cool')
+              ? 'cool_plate'
+              : null,
+  );
 
   const bedFromComment = firstNum(
     firstOf(text, [
@@ -527,7 +545,7 @@ export function parseGcode(text: string): ParsedRun {
 // ---------------------------------------------------------------------------
 
 export interface ValidationResult {
-  accepted: Record<string, number | string | boolean>;
+  accepted: Record<string, ParamValue>;
   /** key -> why it was dropped, for a quiet "3 settings ignored" line in the UI. */
   rejected: Record<string, string>;
   /** key -> [parsedValue, clampedValue] where a value was pulled into range. */
@@ -541,11 +559,11 @@ export interface ValidationResult {
  * every key it sees has a type, a unit and a known range.
  */
 export function validateParameters(
-  parsed: Record<string, number | string | boolean>,
+  parsed: Record<string, ParamValue>,
   defs: ParameterDef[],
 ): ValidationResult {
   const byKey = new Map(defs.map((d) => [d.key, d]));
-  const accepted: Record<string, number | string | boolean> = {};
+  const accepted: Record<string, ParamValue> = {};
   const rejected: Record<string, string> = {};
   const clamped: Record<string, [number, number]> = {};
 
@@ -572,6 +590,29 @@ export function validateParameters(
         continue;
       }
       accepted[key] = value;
+      continue;
+    }
+
+    if (def.data_type === 'multi_enum') {
+      // A list of option keys. A single string (older runs, or a hand-rolled
+      // client) counts as a one-item list. Order kept, duplicates dropped.
+      const opts = def.enum_options ?? [];
+      const list = Array.isArray(value) ? value : typeof value === 'string' ? [value] : null;
+      if (!list || list.some((v) => typeof v !== 'string' || !opts.includes(v))) {
+        rejected[key] = `not a list of: ${opts.join(', ')}`;
+        continue;
+      }
+      const unique = [...new Set(list as string[])];
+      if (unique.length === 0) {
+        rejected[key] = 'empty list';
+        continue;
+      }
+      accepted[key] = unique;
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      rejected[key] = 'a list is only allowed for a multi-choice setting';
       continue;
     }
 

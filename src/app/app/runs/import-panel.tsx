@@ -5,7 +5,9 @@
 // state and does the parsing, because only it can write into the fields.
 
 import { useState } from 'react';
+import { Swatch } from '@/components/filament-catalog-picker';
 import { formatDuration } from '@/lib/duration';
+import type { CatalogPick, FilamentHint } from '@/lib/filament-catalog';
 import { SLICED_FILE_ACCEPT } from '@/lib/gcode-file';
 import { formatNumber } from '@/lib/format';
 
@@ -24,6 +26,8 @@ export type MaterialStatus =
   | { kind: 'kept'; name: string }
   | { kind: 'ambiguous'; type: string; names: string[] }
   | { kind: 'unmatched'; type: string }
+  | { kind: 'created'; name: string }
+  | { kind: 'error'; message: string }
   | { kind: 'none' };
 
 export interface ImportSummary {
@@ -41,6 +45,10 @@ export interface ImportSummary {
   configJson: string | null;
   /** The inbox entry this file came from, when the slicer uploader sent it. */
   pendingId: string | null;
+  /** What the file's slicer settings say about the filament, colour included. */
+  filamentHint: FilamentHint | null;
+  /** The filament-list entry the file's filament matches, offered when none of yours does. */
+  catalogOffer: { pick: CatalogPick; label: string } | null;
   /** Values outside the dictionary's range. Left blank in the form, never clamped in. */
   outOfRange: { label: string; value: number; range: string }[];
   notes: string[];
@@ -63,6 +71,8 @@ export function ImportPanel({
   addingMachine,
   onFile,
   onAddMachine,
+  addingMaterial,
+  onAddMaterial,
 }: {
   importing: boolean;
   error: string | null;
@@ -70,6 +80,8 @@ export function ImportPanel({
   addingMachine: boolean;
   onFile: (file: File) => void;
   onAddMachine: (model: string) => void;
+  addingMaterial: boolean;
+  onAddMaterial: (pick: CatalogPick) => void;
 }) {
   const [dragging, setDragging] = useState(false);
 
@@ -124,7 +136,15 @@ export function ImportPanel({
         </p>
       ) : null}
 
-      {summary ? <Summary summary={summary} addingMachine={addingMachine} onAddMachine={onAddMachine} /> : null}
+      {summary ? (
+        <Summary
+          summary={summary}
+          addingMachine={addingMachine}
+          onAddMachine={onAddMachine}
+          addingMaterial={addingMaterial}
+          onAddMaterial={onAddMaterial}
+        />
+      ) : null}
     </div>
   );
 }
@@ -133,10 +153,14 @@ function Summary({
   summary: s,
   addingMachine,
   onAddMachine,
+  addingMaterial,
+  onAddMaterial,
 }: {
   summary: ImportSummary;
   addingMachine: boolean;
   onAddMachine: (model: string) => void;
+  addingMaterial: boolean;
+  onAddMaterial: (pick: CatalogPick) => void;
 }) {
   return (
     <div className="mt-4 space-y-3 text-sm">
@@ -174,6 +198,22 @@ function Summary({
         <li>
           <span className="opacity-60">Filament: </span>
           <MaterialLine status={s.material} />
+          {s.catalogOffer && !['selected', 'kept', 'created'].includes(s.material.kind) ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-black/10 px-3 py-2 dark:border-white/15">
+              <Swatch hex={s.catalogOffer.pick.hex} size="h-5 w-5" />
+              <span className="min-w-0 flex-1">
+                The file used <span className="font-medium">{s.catalogOffer.label}</span>.
+              </span>
+              <button
+                type="button"
+                disabled={addingMaterial}
+                onClick={() => s.catalogOffer && onAddMaterial(s.catalogOffer.pick)}
+                className="rounded-lg border border-black/20 px-3 py-1.5 text-sm font-medium hover:bg-black/5 disabled:opacity-50 dark:border-white/25 dark:hover:bg-white/10"
+              >
+                {addingMaterial ? 'Adding...' : 'Add it to my materials'}
+              </button>
+            </div>
+          ) : null}
         </li>
       </ul>
 
@@ -262,6 +302,10 @@ function MaterialLine({ status }: { status: MaterialStatus }) {
       return <>selected {status.name}</>;
     case 'kept':
       return <>{status.name}, matches the file</>;
+    case 'created':
+      return <>added {status.name} and selected it</>;
+    case 'error':
+      return <span className="text-red-600 dark:text-red-400">{status.message}</span>;
     case 'ambiguous':
       return (
         <>
@@ -271,8 +315,8 @@ function MaterialLine({ status }: { status: MaterialStatus }) {
     case 'unmatched':
       return (
         <>
-          the file says {status.type}, and none of your materials have that category. Pick one below, or set a
-          material&rsquo;s category to {status.type} so future imports find it.
+          the file says {status.type}, and none of your materials match it. Pick one below, or add it from the
+          filament list.
         </>
       );
     default:

@@ -69,6 +69,15 @@ export function materialFieldGroups(
         { name: 'brand', label: 'Brand', kind: 'text', maxLength: 80, placeholder: 'Prusament', defaultValue: inputValue(material?.brand) },
         { name: 'color', label: 'Colour', kind: 'text', maxLength: 60, placeholder: 'Galaxy Black', defaultValue: inputValue(material?.color) },
         {
+          name: 'color_hex',
+          label: 'Colour code',
+          kind: 'text',
+          maxLength: 7,
+          placeholder: '#1A1A1A',
+          defaultValue: inputValue(material?.color_hex),
+          help: 'Filled in when you pick from the filament list. Lets an imported file pick this spool by its colour.',
+        },
+        {
           name: 'unit',
           label: 'Measured in',
           kind: 'select',
