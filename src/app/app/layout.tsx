@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { NavLinks } from '@/components/nav-links';
+import { BottomTabs, NavLinks } from '@/components/nav-links';
 import { requireUser } from '@/lib/auth';
 
 // The proxy already blocks unauthenticated requests to /app. requireUser() is
@@ -15,7 +15,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <Link href="/app" className="font-semibold tracking-tight">
             SpoolStack
           </Link>
-          <div className="order-last w-full sm:order-none sm:w-auto">
+          {/* Phones navigate with BottomTabs; the top links start at sm. */}
+          <div className="hidden sm:block">
             <NavLinks />
           </div>
           <div className="ml-auto flex items-center gap-3 text-sm">
@@ -38,7 +39,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">{children}</main>
+      {/* pb-28 on phones keeps the last of the page clear of the bottom tabs. */}
+      <main className="mx-auto w-full max-w-5xl flex-1 px-6 pt-8 pb-28 sm:pb-8">{children}</main>
+      <BottomTabs />
     </div>
   );
 }
