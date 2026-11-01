@@ -20,6 +20,7 @@
 // startTransition, so a validation failure never wipes what was typed.
 
 import Link from 'next/link';
+import { useOffline } from 'next/offline';
 import { startTransition, useActionState, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { FilamentCatalogPicker, Swatch } from '@/components/filament-catalog-picker';
 import { LocalTime } from '@/components/local-time';
@@ -246,6 +247,11 @@ export function RunForm({
   const [materials, setMaterials] = useState<MaterialOption[]>(data.materials);
   const editing = initial !== undefined;
   const [state, dispatch, pending] = useActionState(action, idleState);
+  // With experimental.useOffline (next.config.ts) a save made with no
+  // connection stays pending and is sent again when the connection returns.
+  // The form stays on screen with everything typed; this says so.
+  const offline = useOffline();
+  const waitingForNetwork = pending && offline;
   const errors = state.status === 'error' ? state.fieldErrors : {};
 
   const last = recentRuns[0] ?? null;
@@ -926,12 +932,17 @@ export function RunForm({
             disabled={pending}
             className="rounded-lg bg-foreground px-6 py-3 text-sm font-semibold text-background disabled:opacity-50"
           >
-            {pending ? 'Saving...' : editing ? 'Save changes' : 'Save run'}
+            {waitingForNetwork ? 'Waiting for connection...' : pending ? 'Saving...' : editing ? 'Save changes' : 'Save run'}
           </button>
           <Link href={editing ? `/app/runs/${initial.runId}` : '/app/runs'} className="text-sm opacity-70 hover:opacity-100">
             Cancel
           </Link>
-          {state.status === 'error' ? (
+          {waitingForNetwork ? (
+            <p role="status" className="ml-auto text-sm">
+              No connection. Not saved yet: this run is kept here and saves when you are back online. Keep this
+              page open.
+            </p>
+          ) : state.status === 'error' ? (
             <p role="alert" className="ml-auto text-sm text-red-600 dark:text-red-400">
               {state.message}
             </p>
