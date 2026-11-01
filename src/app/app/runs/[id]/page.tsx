@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ConfirmSubmit } from '@/components/confirm-submit';
 import { LocalTime } from '@/components/local-time';
 import { Notice } from '@/components/page-header';
 import { requireUser } from '@/lib/auth';
@@ -13,7 +12,8 @@ import { diffParameters } from '@/lib/run-diff';
 import { optionLabel } from '@/lib/run-params';
 import { deleteRun } from '../actions';
 import { PARAM_DEF_COLUMNS } from '../data';
-import { OutcomeBadge } from '../outcome-badge';
+import { OUTCOME_LABELS, OutcomeBadge } from '../outcome-badge';
+import { DeleteRunButton } from './delete-run-button';
 import { PhotoCard, type DefectOption } from './photo-card';
 import { PhotoUploader } from './photo-uploader';
 
@@ -449,12 +449,14 @@ export default async function RunDetailPage({
           be undone.
         </p>
         <form action={deleteRun.bind(null, run.id)} className="mt-3">
-          <ConfirmSubmit
-            message="Delete this run? This cannot be undone."
+          <DeleteRunButton
+            title={run.title || run.materials?.name || 'Untitled run'}
+            outcomeLabel={OUTCOME_LABELS[run.outcome] ?? run.outcome}
+            finishedIso={run.completed_at ?? run.created_at}
+            photoCount={photos.length}
+            retryCount={retries.length}
             className="rounded-lg border border-red-500/50 px-4 py-2 text-sm text-red-700 hover:bg-red-500/10 dark:text-red-400"
-          >
-            Delete run
-          </ConfirmSubmit>
+          />
         </form>
       </section>
     </div>
