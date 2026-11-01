@@ -49,7 +49,7 @@ export default async function RunsPage({ searchParams }: { searchParams: Promise
   let query = supabase
     .from('runs')
     .select(
-      'id, title, completed_at, created_at, outcome, source, duration_minutes, material_qty_used, material_qty_estimated, units_produced, units_good, machines(name), materials(name, unit)',
+      'id, title, completed_at, created_at, outcome, source, retry_of_run_id, duration_minutes, material_qty_used, material_qty_estimated, units_produced, units_good, machines(name), materials(name, unit)',
       { count: 'exact' },
     );
   if (f.outcome) query = query.eq('outcome', f.outcome);
@@ -68,6 +68,24 @@ export default async function RunsPage({ searchParams }: { searchParams: Promise
     supabase.from('materials').select('id, name').order('name'),
     supabase.from('projects').select('id, name').order('name'),
   ]);
+
+  // For this page's rows only: the title of the run each retry retries, and
+  // how many photos each run has. Two small lookups by id rather than
+  // embeds, because runs references itself and run_photos is one-to-many.
+  const shown = runs ?? [];
+  const parentIds = [...new Set(shown.map((r) => r.retry_of_run_id).filter((x): x is string => !!x))];
+  const [parentsRes, photosRes] = await Promise.all([
+    parentIds.length > 0
+      ? supabase.from('runs').select('id, title, materials(name)').in('id', parentIds)
+      : Promise.resolve({ data: [] as { id: string; title: string | null; materials: { name: string } | null }[] }),
+    shown.length > 0
+      ? supabase.from('run_photos').select('run_id').in('run_id', shown.map((r) => r.id))
+      : Promise.resolve({ data: [] as { run_id: string }[] }),
+  ]);
+  const parentTitle = new Map<string, string>();
+  for (const p of parentsRes.data ?? []) parentTitle.set(p.id, p.title || p.materials?.name || 'Untitled run');
+  const photoCount = new Map<string, number>();
+  for (const ph of photosRes.data ?? []) photoCount.set(ph.run_id, (photoCount.get(ph.run_id) ?? 0) + 1);
 
   const total = count ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -124,6 +142,8 @@ export default async function RunsPage({ searchParams }: { searchParams: Promise
         <ul className="divide-y divide-black/10 rounded-lg border border-black/10 dark:divide-white/15 dark:border-white/15">
           {runs.map((r) => {
             const title = r.title || r.materials?.name || 'Untitled run';
+            const retryOf = r.retry_of_run_id ? parentTitle.get(r.retry_of_run_id) : undefined;
+            const photos = photoCount.get(r.id) ?? 0;
             const facts = [
               r.machines?.name,
               r.duration_minutes !== null ? formatDuration(r.duration_minutes) : null,
@@ -132,6 +152,7 @@ export default async function RunsPage({ searchParams }: { searchParams: Promise
                 : null,
               r.units_produced > 1 ? `${r.units_good ?? r.units_produced}/${r.units_produced} parts` : null,
               r.source === 'gcode_import' ? 'imported' : null,
+              photos > 0 ? `${photos} ${photos === 1 ? 'photo' : 'photos'}` : null,
             ].filter(Boolean);
             return (
               <li key={r.id}>
@@ -139,8 +160,11 @@ export default async function RunsPage({ searchParams }: { searchParams: Promise
                   href={`/app/runs/${r.id}`}
                   className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 hover:bg-black/5 dark:hover:bg-white/5"
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium">{title}</div>
+                  {/* Phone: the title takes the full width and wraps to two
+                      lines; date and badge drop to the line below. */}
+                  <div className="w-full min-w-0 sm:w-auto sm:flex-1">
+                    <div className="line-clamp-2 break-words font-medium">{title}</div>
+                    {retryOf ? <div className="truncate text-sm opacity-70">Retry of {retryOf}</div> : null}
                     <div className="text-sm opacity-60">{facts.join(' / ')}</div>
                   </div>
                   <div className="text-sm tabular-nums opacity-60">

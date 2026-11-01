@@ -20,6 +20,7 @@
     "test:ingest": "node --experimental-strip-types src/lib/ingest.test.ts",
     "test:inbox": "node --experimental-strip-types src/lib/inbox.test.ts",
     "test:filament-catalog": "node --experimental-strip-types src/lib/filament-catalog.test.ts",
+    "test:retry-title": "node --experimental-strip-types src/lib/retry-title.test.ts",
     "catalog:update": "node scripts/build-filament-catalog.mjs"
   },
   "dependencies": {

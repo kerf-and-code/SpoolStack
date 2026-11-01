@@ -1,5 +1,6 @@
 // Loads everything the run form needs. Shared by /new and /[id]/edit.
 
+import { nextRetryTitle, retryBase, retryTitlePattern } from '@/lib/retry-title';
 import type { ServerClient } from '@/lib/supabase/server';
 import { OUTCOMES, type Outcome, type PendingImport, type RetryContext, type RunFormData } from './types';
 
@@ -89,6 +90,24 @@ export async function loadRetryContext(
   if (!run) return null;
 
   const outcome: Outcome = (OUTCOMES as readonly string[]).includes(run.outcome) ? (run.outcome as Outcome) : 'failure';
+
+  // A new retry is titled "<parent title> (retry N)", numbered past every
+  // retry title already used for that base, so the runs list never holds
+  // identical names. Untitled parents fall back to the material name, as the
+  // list does. RLS limits the lookup to your own runs.
+  let retryTitle = '';
+  if (withSource) {
+    const parentTitle = run.title || run.materials?.name || '';
+    const base = retryBase(parentTitle);
+    if (base) {
+      const { data: used } = await supabase.from('runs').select('title').ilike('title', retryTitlePattern(base));
+      retryTitle = nextRetryTitle(
+        parentTitle,
+        (used ?? []).map((u) => u.title ?? ''),
+      );
+    }
+  }
+
   return {
     of: {
       id: run.id,
@@ -99,7 +118,9 @@ export async function loadRetryContext(
     source: withSource
       ? {
           id: run.id,
-          title: run.title,
+          // The new retry's title, not the parent's: valuesFromRun copies it
+          // into the form, where the user can still change it.
+          title: retryTitle || null,
           created_at: run.created_at,
           machine_id: run.machine_id,
           material_id: run.material_id,
