@@ -154,7 +154,7 @@ export function PhotoUploader({
           <>
             {status.added > 0 ? (
               <p className="opacity-70">
-                {status.added === 1 ? 'Photo added.' : `${status.added} photos added.`} Tag any defect each one shows below.
+                {status.added === 1 ? 'Photo added.' : `${status.added} photos added.`} Check the defect on each one below.
               </p>
             ) : null}
             {status.errors.length > 0 ? (

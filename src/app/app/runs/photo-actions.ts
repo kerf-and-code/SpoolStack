@@ -4,6 +4,12 @@
 // private Storage bucket (Storage policies limit it to the user's own folder
 // and own runs), then calls addRunPhoto to record it. Every action proves the
 // user and re-checks ownership; RLS on run_photos is the second lock.
+//
+// A new photo on a run with exactly one defect is labeled with that defect,
+// so the user does not pick it a second time (UX critic round 1, finding 5).
+// With no defects or several, it stays unlabeled: guessing which of several
+// defects a photo shows would put wrong labels into training data. The user
+// can change or clear the label on the photo card either way.
 
 import { revalidatePath } from 'next/cache';
 import { requireUser } from '@/lib/auth';
@@ -32,10 +38,10 @@ export async function addRunPhoto(input: {
   const { data: run } = await supabase.from('runs').select('id').eq('id', input.runId).maybeSingle();
   if (!run) return { ok: false, message: 'That run no longer exists.' };
 
-  const { count } = await supabase
-    .from('run_photos')
-    .select('id', { count: 'exact', head: true })
-    .eq('run_id', input.runId);
+  const [{ count }, { data: defects }] = await Promise.all([
+    supabase.from('run_photos').select('id', { count: 'exact', head: true }).eq('run_id', input.runId),
+    supabase.from('run_defects').select('defect_type_id').eq('run_id', input.runId),
+  ]);
   if ((count ?? 0) >= PHOTOS_PER_RUN_LIMIT) {
     return { ok: false, message: `A run can hold ${PHOTOS_PER_RUN_LIMIT} photos. Delete one to add another.` };
   }
@@ -45,6 +51,7 @@ export async function addRunPhoto(input: {
     user_id: userId,
     storage_path: input.path,
     kind: input.kind,
+    defect_type_id: defects && defects.length === 1 ? defects[0].defect_type_id : null,
     width: posInt(input.width, 20_000),
     height: posInt(input.height, 20_000),
     bytes: posInt(input.bytes, 10_485_760),
