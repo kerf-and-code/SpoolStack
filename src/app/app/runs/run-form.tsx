@@ -10,7 +10,8 @@
 //      plus any parameter the dictionary marks is_required (for FDM: nozzle
 //      temperature and layer height). Promoted automatically from
 //      parameter_defs, so a CNC domain's required spindle speed would appear
-//      here too with no code change.
+//      here too with no code change. For a failed or aborted run they stay
+//      here but become optional (isRequiredFor), with no prefill.
 //   3. Defects: open by default when the run was not a success.
 //   4. Settings used: every other parameter_def, grouped, collapsed.
 //   5. Details: finish time, hands-on time, quality, notes. Collapsed.
@@ -38,7 +39,7 @@ import { parseGcode, type ParsedRun } from '@/lib/gcodeParse';
 import { idleState, type FormState } from '@/lib/forms';
 import { acceptImportedParameters, importMetadata, storedParse, type ImportOrigin } from '@/lib/import-record';
 import { matchMachines, matchMaterial } from '@/lib/import-match';
-import { MULTI_SEPARATOR, PARAM_PREFIX, optionLabel, parametersToFields, type ParamDefRow } from '@/lib/run-params';
+import { MULTI_SEPARATOR, PARAM_PREFIX, isRequiredFor, optionLabel, parametersToFields, type ParamDefRow } from '@/lib/run-params';
 import { createMachineFromImport } from '../machines/actions';
 import { createMaterialFromCatalog } from '../materials/actions';
 import { saveRun } from './actions';
@@ -754,7 +755,14 @@ export function RunForm({
           ) : null}
 
           {requiredDefs.map((def) => (
-            <ParamInput key={def.key} def={def} value={values[PARAM_PREFIX + def.key] ?? ''} onChange={set} error={errors[PARAM_PREFIX + def.key]} />
+            <ParamInput
+              key={def.key}
+              def={def}
+              outcome={outcome}
+              value={values[PARAM_PREFIX + def.key] ?? ''}
+              onChange={set}
+              error={errors[PARAM_PREFIX + def.key]}
+            />
           ))}
 
           <Field label="Project" name="project_id" error={errors.project_id}>
@@ -1045,13 +1053,18 @@ function ErrorText({ children }: { children: React.ReactNode }) {
   return <p className="mt-1 text-sm text-red-600 dark:text-red-400">{children}</p>;
 }
 
+const RELAXED_OUTCOME_TEXT: Record<string, string> = { failure: 'a failed run', aborted: 'an aborted run' };
+
 function ParamInput({
   def,
+  outcome,
   value,
   onChange,
   error,
 }: {
   def: ParamDefRow;
+  /** The outcome picked so far; a failed or aborted run relaxes required settings. */
+  outcome?: string;
   value: string;
   onChange: (name: string, value: string) => void;
   error?: string;
@@ -1059,8 +1072,18 @@ function ParamInput({
   const name = PARAM_PREFIX + def.key;
   const range =
     def.min_value !== null && def.max_value !== null ? `${def.min_value} to ${def.max_value}` : undefined;
-  const help = [def.help_text, range && def.unit ? `${range} ${def.unit}` : range].filter(Boolean).join(' ');
-  const label = def.is_required ? `${def.display_name} *` : def.display_name;
+  const required = isRequiredFor(def, outcome);
+  // Required by the dictionary but not for this outcome: say so, so a blank
+  // reads as a choice, not an oversight.
+  const relaxed = def.is_required && !required ? RELAXED_OUTCOME_TEXT[outcome ?? ''] : undefined;
+  const help = [
+    relaxed ? `Optional for ${relaxed}. Leave it blank if you do not know it.` : null,
+    def.help_text,
+    range && def.unit ? `${range} ${def.unit}` : range,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const label = required ? `${def.display_name} *` : def.display_name;
 
   let control: React.ReactNode;
   if (def.data_type === 'boolean') {

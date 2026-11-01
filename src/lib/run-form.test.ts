@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { formatDuration, formatDurationForInput, parseDurationMinutes } from './duration.ts';
 import { parameterDefsFixture } from './run-form.fixtures.ts';
-import { parametersToFields, parseParameterFields } from './run-params.ts';
+import { isRequiredFor, parametersToFields, parseParameterFields } from './run-params.ts';
 
 const minutes = (s: string) => {
   const r = parseDurationMinutes(s);
@@ -178,4 +178,35 @@ test('surface prep takes several methods; build plate takes one', () => {
 
   const none = parseParameterFields({ 'p.nozzle_temp': '220', 'p.layer_height': '0.2', 'p.surface_prep': '' }, parameterDefsFixture);
   assert.equal('surface_prep' in none.values, false, 'nothing ticked means not recorded');
+});
+
+// --------------------------------------------------------------------------
+// required settings by outcome (UX critic round 1, finding 5)
+
+test('parameters: failed and aborted runs can leave required settings blank', () => {
+  for (const outcome of ['failure', 'aborted']) {
+    const r = parseParameterFields({}, parameterDefsFixture, outcome);
+    assert.equal(r.errors['p.nozzle_temp'], undefined, outcome);
+    assert.equal(r.errors['p.layer_height'], undefined, outcome);
+    assert.equal('nozzle_temp' in r.values, false, `${outcome}: blank is not recorded, never filled in`);
+  }
+});
+
+test('parameters: success, partial and no outcome still require them', () => {
+  for (const outcome of ['success', 'partial', '', undefined]) {
+    const r = parseParameterFields({}, parameterDefsFixture, outcome);
+    assert.equal(r.errors['p.nozzle_temp'], 'Nozzle temperature is required.', String(outcome));
+    assert.equal(r.errors['p.layer_height'], 'Layer height is required.', String(outcome));
+  }
+});
+
+test('parameters: a value typed on a failed run is still range-checked', () => {
+  const r = parseParameterFields({ 'p.nozzle_temp': '2100' }, parameterDefsFixture, 'failure');
+  assert.match(r.errors['p.nozzle_temp'] ?? '', /between/);
+});
+
+test('isRequiredFor: optional settings are never required', () => {
+  assert.equal(isRequiredFor({ is_required: false }, 'success'), false);
+  assert.equal(isRequiredFor({ is_required: true }, 'success'), true);
+  assert.equal(isRequiredFor({ is_required: true }, 'failure'), false);
 });

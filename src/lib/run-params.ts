@@ -67,6 +67,22 @@ export function optionLabel(key: string): string {
 
 export const PARAM_PREFIX = 'p.';
 
+/**
+ * Outcomes where the dictionary's required settings (for FDM: nozzle
+ * temperature and layer height) become optional. A failed or aborted print
+ * often has no reliable record of what it was sliced with, and an honest blank
+ * is better calibration and training data than a guessed or copied number.
+ * Deliberately NOT prefilled from the last run: a copied value saved without
+ * a look would be stored as fact (UX critic round 1, finding 5). Success and
+ * partial keep them required.
+ */
+export const SETTINGS_OPTIONAL_OUTCOMES: readonly string[] = ['failure', 'aborted'];
+
+/** Whether a setting must be filled for a run with this outcome. */
+export function isRequiredFor(def: Pick<ParamDefRow, 'is_required'>, outcome: string | null | undefined): boolean {
+  return def.is_required && !SETTINGS_OPTIONAL_OUTCOMES.includes(outcome ?? '');
+}
+
 function rangeText(def: ParamDefRow): string {
   const unit = def.unit ? ` ${def.unit}` : '';
   if (def.min_value !== null && def.max_value !== null) return `between ${def.min_value} and ${def.max_value}${unit}`;
@@ -78,10 +94,13 @@ function rangeText(def: ParamDefRow): string {
 /**
  * Parse every "p.<key>" field against its definition. Errors are keyed by the
  * form field name ("p.nozzle_temp") so the form can show them in place.
+ * Pass the run's outcome so required settings relax for a failed or aborted
+ * run; without one, every required setting is required.
  */
 export function parseParameterFields(
   fields: Record<string, string>,
   defs: ParamDefRow[],
+  outcome?: string,
 ): { values: Record<string, ParamValue>; errors: Record<string, string> } {
   const values: Record<string, ParamValue> = {};
   const errors: Record<string, string> = {};
@@ -91,7 +110,7 @@ export function parseParameterFields(
     const raw = (fields[name] ?? '').trim();
 
     if (raw === '') {
-      if (def.is_required) errors[name] = `${def.display_name} is required.`;
+      if (isRequiredFor(def, outcome)) errors[name] = `${def.display_name} is required.`;
       continue;
     }
 

@@ -141,7 +141,8 @@ async function validateRun(supabase: ServerClient, formData: FormData): Promise<
     return { ok: false, state: errorState('Could not load the settings dictionary. Try again.', errors) };
   }
 
-  const params = parseParameterFields(fields, defsRes.data);
+  // Required settings relax for a failed or aborted run (isRequiredFor).
+  const params = parseParameterFields(fields, defsRes.data, v.outcome);
   Object.assign(errors, params.errors);
 
   const allowedDefects = new Set(defectsRes.data.map((d) => d.id));
