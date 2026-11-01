@@ -4,11 +4,20 @@
 // The whole point of Stage 1 is that logging a print is confirming it, not
 // typing it, so the common case (it worked, and the printer and filament are
 // certain) is one tap.
+//
+// The two tap buttons call Server Actions from onClick, so they do nothing
+// until hydration: they stay disabled until then (Worked says Loading...).
+// After a tap only the tapped button changes its label. With
+// experimental.useOffline (next.config.ts) a tap made with no connection stays
+// pending and is sent when the connection returns; the button and a status
+// line say so instead of looking stuck.
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useOffline } from 'next/offline';
 import { useState, useTransition } from 'react';
 import { LocalTime } from '@/components/local-time';
+import { useHydrated } from '@/components/use-hydrated';
 import { formatDuration } from '@/lib/duration';
 import { formatNumber } from '@/lib/format';
 import { dismissPending, logPendingWorked } from './inbox-actions';
@@ -24,6 +33,8 @@ export interface InboxItem {
   setupLabel: string | null;
 }
 
+type Busy = { id: string; action: 'worked' | 'dismiss' };
+
 interface Done {
   id: string;
   title: string;
@@ -37,15 +48,17 @@ export function Inbox({ items }: { items: InboxItem[] }) {
   const [done, setDone] = useState<Done[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState<Busy | null>(null);
   const [, startTransition] = useTransition();
   const router = useRouter();
+  const hydrated = useHydrated();
+  const offline = useOffline();
 
   const visible = items.filter((i) => !hidden.has(i.id) && !done.some((d) => d.id === i.id));
   if (visible.length === 0 && done.length === 0) return null;
 
   function worked(item: InboxItem) {
-    setBusy(item.id);
+    setBusy({ id: item.id, action: 'worked' });
     setErrors((e) => ({ ...e, [item.id]: '' }));
     startTransition(async () => {
       const r = await logPendingWorked(item.id);
@@ -57,7 +70,7 @@ export function Inbox({ items }: { items: InboxItem[] }) {
   }
 
   function notPrinted(item: InboxItem) {
-    setBusy(item.id);
+    setBusy({ id: item.id, action: 'dismiss' });
     startTransition(async () => {
       const r = await dismissPending(item.id);
       setBusy(null);
@@ -93,7 +106,10 @@ export function Inbox({ items }: { items: InboxItem[] }) {
             item.materialG !== null ? `${formatNumber(item.materialG, 1)} g` : null,
             item.setupLabel ?? item.printerModel,
           ].filter(Boolean);
-          const isBusy = busy === item.id;
+          const isBusy = busy?.id === item.id;
+          const logging = isBusy && busy?.action === 'worked';
+          const dismissing = isBusy && busy?.action === 'dismiss';
+          const waiting = isBusy && offline;
           return (
             <li key={item.id} className="py-4 first:pt-0 last:pb-0">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -108,10 +124,17 @@ export function Inbox({ items }: { items: InboxItem[] }) {
                   <button
                     type="button"
                     onClick={() => worked(item)}
-                    disabled={isBusy}
+                    disabled={!hydrated || isBusy}
+                    aria-busy={logging || undefined}
                     className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                   >
-                    {isBusy ? 'Logging...' : 'Worked'}
+                    {!hydrated
+                      ? 'Loading...'
+                      : logging
+                        ? waiting
+                          ? 'Waiting for connection...'
+                          : 'Logging...'
+                        : 'Worked'}
                   </button>
                 ) : (
                   <Link
@@ -127,13 +150,25 @@ export function Inbox({ items }: { items: InboxItem[] }) {
                 <Link href={`/app/runs/new?pending=${item.id}`} className={btn}>
                   Partly, or edit first
                 </Link>
-                <button type="button" onClick={() => notPrinted(item)} disabled={isBusy} className={`${btn} opacity-70`}>
-                  Didn&rsquo;t print
+                <button
+                  type="button"
+                  onClick={() => notPrinted(item)}
+                  disabled={!hydrated || isBusy}
+                  aria-busy={dismissing || undefined}
+                  className={`${btn} opacity-70`}
+                >
+                  {dismissing ? (waiting ? 'Waiting for connection...' : 'Setting aside...') : <>Didn&rsquo;t print</>}
                 </button>
               </div>
               {!item.setupLabel ? (
                 <p className="mt-2 text-xs opacity-60">
                   Opens the form so you can pick the {item.printerModel ? 'machine or material' : 'machine and material'}.
+                </p>
+              ) : null}
+              {waiting ? (
+                <p role="status" className="mt-2 text-sm">
+                  No connection. {logging ? 'Not logged yet' : 'Not set aside yet'}: it is sent when you are back
+                  online. Keep this page open.
                 </p>
               ) : null}
               {errors[item.id] ? (

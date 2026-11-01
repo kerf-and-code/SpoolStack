@@ -148,6 +148,7 @@ export default async function UploaderPage() {
                 <form action={revokeUploadToken.bind(null, t.id)}>
                   <ConfirmSubmit
                     message={`Revoke the token for "${t.name}"? The script on that computer stops working until you set it up with a new token.`}
+                    pendingLabel="Revoking..."
                     className="rounded-lg border border-red-500/50 px-3 py-1.5 text-xs text-red-700 hover:bg-red-500/10 dark:text-red-400"
                   >
                     Revoke
